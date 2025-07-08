@@ -18,4 +18,50 @@ target
 #  be found at https://github.com/github/gitignore/blob/main/Global/JetBrains.gitignore
 #  and can be added to the global gitignore or merged into this file.  For a more nuclear
 #  option (not recommended) you can uncomment the following to ignore the entire idea folder.
-#.idea/
+.idea/
+
+# Build artifacts
+target/
+Cargo.lock
+
+# Claude-related files
+.claude/
+*claude*
+*Claude*
+CLAUDE.md
+CLAUDE_*.md
+
+# Test files
+tests/
+test_*.sh
+test_*.rs
+test_*.md
+
+# Debug and diagnostic files
+debug_*.sh
+debug_*.rs
+diagnose.md
+diagnostic_*.md
+
+# Temporary files
+*.log
+*.tmp
+.DS_Store
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+Thumbs.db
+
+# Backup files
+*.bak
+*.backup
+
+# Local scripts
+launch_*.sh
+run_*.sh
