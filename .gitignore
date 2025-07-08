@@ -30,6 +30,7 @@ Cargo.lock
 *Claude*
 CLAUDE.md
 CLAUDE_*.md
+PROJECT_CONTEXT*
 
 # Test files
 tests/
