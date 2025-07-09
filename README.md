@@ -4,7 +4,7 @@ A standalone native GUI application for exploring, debugging, and monitoring Zen
 
 ## Overview
 
-Zenoh Explorer is a comprehensive network debugging tool built specifically for Zenoh mesh networks. It provides a user-friendly interface to:
+Zenoh Explorer is a network debugging tool built specifically for Zenoh networks. It provides a graphical interface to:
 
 - **Subscribe** to key expressions and monitor real-time data flows
 - **Publish** data to the network for testing and debugging
@@ -35,7 +35,7 @@ Zenoh Explorer is a comprehensive network debugging tool built specifically for 
   - Auto-expanding navigation
 
 ### User Interface
-- **Clean, Modern GUI**: Built with egui for native performance
+- **Native Rust GUI**: Built with egui for native performance
 - **Dark/Light Mode**: Toggle between themes for comfortable viewing
   - Optimized color schemes for readability
   - Consistent visual hierarchy
