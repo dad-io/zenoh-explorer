@@ -438,7 +438,7 @@ impl ZenohExplorer {
             selected_node: None,
             command_sender: Some(command_sender),
             event_receiver: Some(event_receiver),
-            dark_mode: false,
+            dark_mode: true,
             max_messages: 1000,
             max_memory_mb: 100,  // Default to 100MB limit
             current_memory_bytes: 0,
@@ -455,7 +455,7 @@ impl ZenohExplorer {
     }
 
     fn background_color(&self) -> Color32 {
-        if self.dark_mode {
+        if  self.dark_mode {
             ExplorerColors::DARK_BACKGROUND
         } else {
             ExplorerColors::BACKGROUND
