@@ -8,9 +8,9 @@ Zenoh Explorer is a network debugging tool built specifically for Zenoh networks
 
 - **Subscribe** to key expressions and monitor real-time data flows
 - **Publish** data to the network for testing and debugging
-- **Query** specific data from the network
-- **Browse** the network topology in real-time
-- **Monitor** all network activity with filtering and search capabilities
+- TODO: **Query** specific data from the network
+- PARTIAL: **Browse** the network topology in real-time
+- TODO: **Monitor** all network activity with filtering and search capabilities
 
 ## Features
 
