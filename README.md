@@ -9,7 +9,7 @@ Zenoh Explorer is a network debugging tool built specifically for Zenoh networks
 - **Subscribe** to key expressions and monitor real-time data flows
 - **Publish** data to the network for testing and debugging
 - TODO: **Query** specific data from the network
-- PARTIAL: **Browse** the network topology in real-time
+- **Browse** the network data topology in real-time
 - TODO: **Monitor** all network activity with filtering and search capabilities
 
 ## Features
@@ -26,7 +26,7 @@ Zenoh Explorer is a network debugging tool built specifically for Zenoh networks
 - **Data Publishing**: Send test data to any key in the network
   - Support for different encodings
   - Immediate visual feedback
-- **Query Interface**: Request data from the network with configurable timeouts
+- TODO: **Query Interface**: Request data from the network with configurable timeouts
   - Note: Requires queryable services on the network
   - Configurable timeout (default: 5 seconds)
 - **Network Browser**: Explore the hierarchical structure of keys and data
@@ -185,7 +185,6 @@ The application uses a dual-thread architecture:
 - Queryables are different from publishers - they actively respond to query requests
 
 ### UI Issues
-- If buttons appear invisible but functional, try toggling between light/dark mode
 - The application automatically enables/disables buttons based on connection status
 - Buttons are only active when connected to a Zenoh network
 
