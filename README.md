@@ -60,7 +60,6 @@ Zenoh Explorer is a network debugging tool built specifically for Zenoh networks
 
 ### Prerequisites
 - Rust 1.70 or later
-- A Zenoh router or network to connect to
 
 ### Building from Source
 
