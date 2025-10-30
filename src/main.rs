@@ -270,15 +270,16 @@ pub struct Subscription {
     pub mode: String,
 }
 
-/// Available tabs in the application UI.
-/// Each tab provides different functionality for interacting with Zenoh.
-#[derive(PartialEq, Debug)]
-enum Tab {
-    Subscribe,
+/// View modes for the right panel detail area
+#[derive(PartialEq, Debug, Clone)]
+enum DetailView {
+    /// Show topic details and message history
+    TopicDetails,
+    /// Show publish interface
     Publish,
+    /// Show query interface
     Query,
-    Browse,
-    Messages,
+    /// Show help information
     Help,
 }
 
@@ -355,9 +356,11 @@ impl RateLimiter {
 /// Main application state for Zenoh Explorer.
 /// Contains all UI state, configuration, and communication channels.
 struct ZenohExplorer {
-    /// Currently selected tab in the UI
-    current_tab: Tab,
+    /// Current detail view mode
+    detail_view: DetailView,
     connection_status: ConnectionStatus,
+    /// Currently selected node path in the tree
+    selected_topic: Option<String>,
     locators: String,
     connection_mode: String,
     config_json: String,
@@ -373,9 +376,8 @@ struct ZenohExplorer {
     messages: VecDeque<ZenohMessage>,
     subscriptions: Vec<Subscription>,
     browse_tree: Arc<RwLock<ZenohNode>>,
-    #[allow(dead_code)]
-    selected_node: Option<String>,
     command_sender: Option<Sender<ZenohCommand>>,
+    tree_filter: String,
     event_receiver: Option<Receiver<ZenohEvent>>,
     dark_mode: bool,
     max_messages: usize,
@@ -418,8 +420,9 @@ impl ZenohExplorer {
         info!("ZenohExplorer initialized with worker thread");
 
         Self {
-            current_tab: Tab::Subscribe,
+            detail_view: DetailView::TopicDetails,
             connection_status: ConnectionStatus::Disconnected,
+            selected_topic: None,
             locators: "tcp/localhost:7447".to_string(),  // Default router endpoint
             connection_mode: "client".to_string(),  // Default to client mode
             config_json: "{}".to_string(),
@@ -435,8 +438,8 @@ impl ZenohExplorer {
             messages: VecDeque::new(),
             subscriptions: Vec::new(),
             browse_tree: Arc::new(RwLock::new(ZenohNode::new("root".to_string()))),
-            selected_node: None,
             command_sender: Some(command_sender),
+            tree_filter: String::new(),
             event_receiver: Some(event_receiver),
             dark_mode: true,
             max_messages: 1000,
@@ -1126,19 +1129,7 @@ impl eframe::App for ZenohExplorer {
 
                 ui.separator();
 
-                // Tab bar
-                ui.horizontal(|ui| {
-                    ui.selectable_value(&mut self.current_tab, Tab::Subscribe, "Subscribe");
-                    ui.selectable_value(&mut self.current_tab, Tab::Publish, "Publish");
-                    ui.selectable_value(&mut self.current_tab, Tab::Query, "Query");
-                    ui.selectable_value(&mut self.current_tab, Tab::Browse, "Browse");
-                    ui.selectable_value(&mut self.current_tab, Tab::Messages, "Messages");
-                    ui.selectable_value(&mut self.current_tab, Tab::Help, "Help");
-                });
-
-                ui.separator();
-
-                // Connection panel - only show when disconnected
+                // Compact connection panel in toolbar
                 if matches!(
                     self.connection_status,
                     ConnectionStatus::Disconnected | ConnectionStatus::Error(_)
@@ -1220,15 +1211,38 @@ impl eframe::App for ZenohExplorer {
 
                 ui.separator();
 
-                // Render the content of the currently selected tab
-                match self.current_tab {
-                    Tab::Subscribe => self.show_subscribe_tab(ui),
-                    Tab::Publish => self.show_publish_tab(ui),
-                    Tab::Query => self.show_query_tab(ui),
-                    Tab::Browse => self.show_browse_tab(ui),
-                    Tab::Messages => self.show_messages_tab(ui),
-                    Tab::Help => self.show_help_tab(ui),
-                }
+                // Main split-panel layout (MQTT Explorer style)
+                egui::TopBottomPanel::top("toolbar").show_inside(ui, |ui| {
+                    ui.horizontal(|ui| {
+                        ui.label("Quick Actions:");
+                        if ui.selectable_label(self.detail_view == DetailView::TopicDetails, "📊 Topics").clicked() {
+                            self.detail_view = DetailView::TopicDetails;
+                        }
+                        if ui.selectable_label(self.detail_view == DetailView::Publish, "📤 Publish").clicked() {
+                            self.detail_view = DetailView::Publish;
+                        }
+                        if ui.selectable_label(self.detail_view == DetailView::Query, "🔍 Query").clicked() {
+                            self.detail_view = DetailView::Query;
+                        }
+                        if ui.selectable_label(self.detail_view == DetailView::Help, "❓ Help").clicked() {
+                            self.detail_view = DetailView::Help;
+                        }
+                    });
+                });
+
+                // Split panel layout
+                egui::SidePanel::left("tree_panel")
+                    .default_width(400.0)
+                    .min_width(250.0)
+                    .resizable(true)
+                    .show_inside(ui, |ui| {
+                        self.show_tree_panel(ui);
+                    });
+
+                // Right panel shows details based on selected view
+                egui::CentralPanel::default().show_inside(ui, |ui| {
+                    self.show_detail_panel(ui);
+                });
             });
 
         // Request continuous repaint for real-time message updates
@@ -1238,6 +1252,316 @@ impl eframe::App for ZenohExplorer {
 }
 
 impl ZenohExplorer {
+    /// Renders the left tree panel (main navigation)
+    fn show_tree_panel(&mut self, ui: &mut egui::Ui) {
+        ui.vertical(|ui| {
+            // Search/filter box
+            ui.horizontal(|ui| {
+                ui.label("🔍");
+                ui.text_edit_singleline(&mut self.tree_filter)
+                    .on_hover_text("Filter topics");
+                if ui.button("✖").clicked() {
+                    self.tree_filter.clear();
+                }
+            });
+
+            ui.separator();
+
+            // Subscription controls
+            ui.collapsing("➕ Subscribe to Topics", |ui| {
+                ui.horizontal(|ui| {
+                    ui.label("Key:");
+                    ui.text_edit_singleline(&mut self.subscribe_key);
+                });
+                let button = egui::Button::new("Subscribe");
+                if ui.add_enabled(
+                    matches!(self.connection_status, ConnectionStatus::Connected) && !self.subscribe_key.is_empty(),
+                    button
+                ).clicked() {
+                    if let Some(sender) = &self.command_sender {
+                        let _ = sender.send(ZenohCommand::Subscribe {
+                            key_expr: self.subscribe_key.clone(),
+                            reliability: self.subscribe_reliability.clone(),
+                            mode: self.subscribe_mode.clone(),
+                        });
+                    }
+                }
+
+                // Active subscriptions
+                if !self.subscriptions.is_empty() {
+                    ui.label(RichText::new("Active:").small());
+                    for subscription in &self.subscriptions.clone() {
+                        ui.horizontal(|ui| {
+                            ui.label(RichText::new(&subscription.key_expr).small());
+                            if ui.small_button("✖").clicked() {
+                                if let Some(sender) = &self.command_sender {
+                                    let _ = sender.send(ZenohCommand::Unsubscribe {
+                                        subscription_id: subscription.id.clone(),
+                                    });
+                                }
+                            }
+                        });
+                    }
+                }
+            });
+
+            ui.separator();
+
+            // Topic tree
+            ui.label(RichText::new("Topics").strong());
+
+            egui::ScrollArea::vertical()
+                .auto_shrink([false; 2])
+                .show(ui, |ui| {
+                    let tree_clone = if let Ok(tree) = self.browse_tree.read() {
+                        tree.clone()
+                    } else {
+                        ZenohNode::new("root".to_string())
+                    };
+
+                    if tree_clone.children.is_empty() {
+                        ui.label(RichText::new("No topics yet. Subscribe to see data.").italic().color(ExplorerColors::TEXT_SECONDARY));
+                    } else {
+                        for (_, child) in &tree_clone.children {
+                            self.show_tree_node(ui, child, String::new(), 0);
+                        }
+                    }
+                });
+        });
+    }
+
+    /// Renders the right detail panel based on current view mode
+    fn show_detail_panel(&mut self, ui: &mut egui::Ui) {
+        match self.detail_view {
+            DetailView::TopicDetails => self.show_topic_details(ui),
+            DetailView::Publish => self.show_publish_tab(ui),
+            DetailView::Query => self.show_query_tab(ui),
+            DetailView::Help => self.show_help_tab(ui),
+        }
+    }
+
+    /// Shows details for the selected topic
+    fn show_topic_details(&mut self, ui: &mut egui::Ui) {
+        if let Some(ref topic) = self.selected_topic.clone() {
+            ui.heading(topic);
+            ui.separator();
+
+            // Get the node details
+            if let Ok(tree) = self.browse_tree.read() {
+                if let Some(node) = self.find_node(&tree, topic) {
+                    // Show node metadata
+                    ui.horizontal(|ui| {
+                        ui.label(RichText::new("Messages:").strong());
+                        ui.label(node.message_count.to_string());
+                    });
+
+                    if let Some(ref payload) = node.last_payload {
+                        ui.separator();
+                        ui.label(RichText::new("Current Value:").strong());
+
+                        // Try to parse and format as JSON
+                        if let Ok(json_value) = serde_json::from_str::<serde_json::Value>(payload) {
+                            if let Ok(pretty) = serde_json::to_string_pretty(&json_value) {
+                                egui::ScrollArea::vertical().show(ui, |ui| {
+                                    ui.code(&pretty);
+                                });
+                            } else {
+                                ui.code(payload);
+                            }
+                        } else {
+                            egui::ScrollArea::vertical().show(ui, |ui| {
+                                ui.code(payload);
+                            });
+                        }
+
+                        if let Some(ref encoding) = node.last_encoding {
+                            ui.separator();
+                            ui.horizontal(|ui| {
+                                ui.label(RichText::new("Encoding:").strong());
+                                ui.label(encoding);
+                            });
+                        }
+                    }
+
+                    ui.separator();
+
+                    // Show message history for this topic
+                    ui.label(RichText::new("Message History:").strong());
+                    egui::ScrollArea::vertical().show(ui, |ui| {
+                        let topic_messages: Vec<_> = self.messages.iter()
+                            .filter(|m| m.key == *topic)
+                            .rev()
+                            .take(50)
+                            .collect();
+
+                        if topic_messages.is_empty() {
+                            ui.label(RichText::new("No messages yet").italic().color(ExplorerColors::TEXT_SECONDARY));
+                        } else {
+                            for message in topic_messages {
+                                ui.group(|ui| {
+                                    ui.horizontal(|ui| {
+                                        ui.label(
+                                            RichText::new(message.timestamp.format("%H:%M:%S%.3f").to_string())
+                                                .color(ExplorerColors::TEXT_SECONDARY)
+                                                .small(),
+                                        );
+                                        ui.label(
+                                            RichText::new(message.message_type.label())
+                                                .background_color(message.message_type.color())
+                                                .color(Color32::WHITE)
+                                                .small(),
+                                        );
+                                    });
+
+                                    if !message.payload.is_empty() {
+                                        let display_payload = if message.payload.len() > 200 {
+                                            format!("{}...", &message.payload[..200])
+                                        } else {
+                                            message.payload.clone()
+                                        };
+                                        ui.label(
+                                            RichText::new(display_payload)
+                                                .color(ExplorerColors::TEXT_SECONDARY)
+                                                .small(),
+                                        );
+                                    }
+                                });
+                            }
+                        }
+                    });
+                }
+            }
+        } else {
+            // No topic selected - show all messages
+            ui.heading("All Messages");
+            ui.separator();
+
+            self.show_messages_tab(ui);
+        }
+    }
+
+    /// Helper to find a node by full path
+    fn find_node<'a>(&self, node: &'a ZenohNode, path: &str) -> Option<&'a ZenohNode> {
+        let parts: Vec<&str> = path.split('/').filter(|p| !p.is_empty()).collect();
+        let mut current = node;
+
+        for part in parts {
+            if let Some(child) = current.children.get(part) {
+                current = child;
+            } else {
+                return None;
+            }
+        }
+
+        Some(current)
+    }
+
+    /// Renders a tree node with improved MQTT Explorer-style visualization
+    fn show_tree_node(&mut self, ui: &mut egui::Ui, node: &ZenohNode, parent_path: String, depth: usize) {
+        // Build the full path for this node
+        let full_path = if parent_path.is_empty() {
+            node.key.clone()
+        } else {
+            format!("{}/{}", parent_path, node.key)
+        };
+
+        // Apply filter
+        if !self.tree_filter.is_empty() && !full_path.contains(&self.tree_filter) {
+            // Check if any children match
+            let has_matching_child = self.has_matching_descendant(node, &self.tree_filter, &full_path);
+            if !has_matching_child {
+                return;
+            }
+        }
+
+        let indent = 12.0 * depth as f32;
+
+        ui.horizontal(|ui| {
+            ui.add_space(indent);
+
+            let is_selected = self.selected_topic.as_ref().map_or(false, |t| t == &full_path);
+
+            if node.children.is_empty() {
+                // Leaf node - show as selectable
+                let response = ui.selectable_label(is_selected, format!("📄 {}", node.key));
+
+                if response.clicked() {
+                    self.selected_topic = Some(full_path.clone());
+                    self.detail_view = DetailView::TopicDetails;
+                }
+
+                // Show message count badge
+                if node.message_count > 0 {
+                    ui.label(
+                        RichText::new(format!("({})", node.message_count))
+                            .small()
+                            .color(ExplorerColors::PRIMARY)
+                    );
+                }
+
+                // Show preview of last value
+                if let Some(ref payload) = node.last_payload {
+                    let preview = if payload.len() > 30 {
+                        format!("{}...", &payload[..30])
+                    } else {
+                        payload.clone()
+                    };
+                    ui.label(
+                        RichText::new(preview)
+                            .small()
+                            .color(ExplorerColors::TEXT_SECONDARY)
+                    );
+                }
+            } else {
+                // Branch node - collapsible
+                let id = egui::Id::new(format!("treenode_{}", full_path));
+                let mut state = egui::collapsing_header::CollapsingState::load_with_default_open(
+                    ui.ctx(),
+                    id,
+                    false
+                );
+
+                let header_response = state.show_header(ui, |ui| {
+                    let response = ui.selectable_label(is_selected, format!("📁 {}", node.key));
+
+                    if response.clicked() {
+                        self.selected_topic = Some(full_path.clone());
+                        self.detail_view = DetailView::TopicDetails;
+                    }
+
+                    // Show child count
+                    ui.label(
+                        RichText::new(format!("({})", node.children.len()))
+                            .small()
+                            .color(ExplorerColors::TEXT_TERTIARY)
+                    );
+                });
+
+                header_response.body(|ui| {
+                    for (_, child) in &node.children {
+                        self.show_tree_node(ui, child, full_path.clone(), depth + 1);
+                    }
+                });
+            }
+        });
+    }
+
+    /// Check if node or any descendant matches filter
+    fn has_matching_descendant(&self, node: &ZenohNode, filter: &str, current_path: &str) -> bool {
+        if current_path.contains(filter) {
+            return true;
+        }
+
+        for (key, child) in &node.children {
+            let child_path = format!("{}/{}", current_path, key);
+            if self.has_matching_descendant(child, filter, &child_path) {
+                return true;
+            }
+        }
+
+        false
+    }
+
     /// Renders the Subscribe tab UI.
     /// Allows users to create subscriptions and manage active ones.
     fn show_subscribe_tab(&mut self, ui: &mut egui::Ui) {
@@ -1391,59 +1715,6 @@ impl ZenohExplorer {
         });
     }
 
-    /// Renders the Browse tab UI.
-    /// Displays a hierarchical tree view of all keys seen on the network.
-    fn show_browse_tab(&mut self, ui: &mut egui::Ui) {
-        ui.label("Network Browser");
-        
-        // Clone the tree outside of the closure to avoid borrow issues
-        let tree_clone = if let Ok(tree) = self.browse_tree.read() {
-            tree.clone()
-        } else {
-            ZenohNode::new("root".to_string())
-        };
-        
-        egui::ScrollArea::vertical().show(ui, |ui| {
-            self.show_browse_node(ui, &tree_clone, 0);
-        });
-    }
-
-    /// Recursively renders a node in the browse tree.
-    /// Uses collapsing headers for branch nodes and shows data for leaf nodes.
-    /// 
-    /// # Arguments
-    /// * `ui` - The egui UI context
-    /// * `node` - The tree node to render
-    /// * `depth` - Current depth in the tree for indentation
-    fn show_browse_node(&mut self, ui: &mut egui::Ui, node: &ZenohNode, depth: usize) {
-        // Create visual indentation based on tree depth
-        let indent = "  ".repeat(depth);
-
-        if node.children.is_empty() {
-            // Leaf node
-            ui.horizontal(|ui| {
-                ui.label(format!("{}📄 {}", indent, node.key));
-                if let Some(ref payload) = node.last_payload {
-                    ui.label(format!(
-                        "({})",
-                        payload.chars().take(50).collect::<String>()
-                    ));
-                }
-            });
-        } else {
-            // Branch node
-            let id = egui::Id::new(format!("node_{}", node.key));
-            egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), id, false)
-                .show_header(ui, |ui| {
-                    ui.label(format!("{}📁 {}", indent, node.key));
-                })
-                .body(|ui| {
-                    for child in node.children.values() {
-                        self.show_browse_node(ui, child, depth + 1);
-                    }
-                });
-        }
-    }
 
     /// Renders the Messages tab UI.
     /// Shows all network activity with filtering and auto-scroll capabilities.
