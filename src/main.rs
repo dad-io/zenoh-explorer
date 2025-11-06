@@ -1320,7 +1320,7 @@ impl ZenohExplorer {
                     };
 
                     if tree_clone.children.is_empty() {
-                        ui.label(RichText::new("No topics yet. Subscribe to see data.").italic().color(ExplorerColors::TEXT_SECONDARY));
+                        ui.label(RichText::new("No topics yet. Subscribe to see data.").italics().color(ExplorerColors::TEXT_SECONDARY));
                     } else {
                         for (_, child) in &tree_clone.children {
                             self.show_tree_node(ui, child, String::new(), 0);
@@ -1395,7 +1395,7 @@ impl ZenohExplorer {
                             .collect();
 
                         if topic_messages.is_empty() {
-                            ui.label(RichText::new("No messages yet").italic().color(ExplorerColors::TEXT_SECONDARY));
+                            ui.label(RichText::new("No messages yet").italics().color(ExplorerColors::TEXT_SECONDARY));
                         } else {
                             for message in topic_messages {
                                 ui.group(|ui| {
@@ -1475,14 +1475,12 @@ impl ZenohExplorer {
         }
 
         let indent = 12.0 * depth as f32;
+        let is_selected = self.selected_topic.as_ref().map_or(false, |t| t == &full_path);
 
-        ui.horizontal(|ui| {
-            ui.add_space(indent);
-
-            let is_selected = self.selected_topic.as_ref().map_or(false, |t| t == &full_path);
-
-            if node.children.is_empty() {
-                // Leaf node - show as selectable
+        if node.children.is_empty() {
+            // Leaf node - show as selectable in horizontal layout
+            ui.horizontal(|ui| {
+                ui.add_space(indent);
                 let response = ui.selectable_label(is_selected, format!("📄 {}", node.key));
 
                 if response.clicked() {
@@ -1512,38 +1510,39 @@ impl ZenohExplorer {
                             .color(ExplorerColors::TEXT_SECONDARY)
                     );
                 }
-            } else {
-                // Branch node - collapsible
-                let id = egui::Id::new(format!("treenode_{}", full_path));
-                let mut state = egui::collapsing_header::CollapsingState::load_with_default_open(
-                    ui.ctx(),
-                    id,
-                    false
+            });
+        } else {
+            // Branch node - collapsible (NOT inside horizontal layout)
+            let id = egui::Id::new(format!("treenode_{}", full_path));
+            let state = egui::collapsing_header::CollapsingState::load_with_default_open(
+                ui.ctx(),
+                id,
+                false
+            );
+
+            ui.add_space(indent);
+            let header_response = state.show_header(ui, |ui| {
+                let response = ui.selectable_label(is_selected, format!("📁 {}", node.key));
+
+                if response.clicked() {
+                    self.selected_topic = Some(full_path.clone());
+                    self.detail_view = DetailView::TopicDetails;
+                }
+
+                // Show child count
+                ui.label(
+                    RichText::new(format!("({})", node.children.len()))
+                        .small()
+                        .color(ExplorerColors::TEXT_TERTIARY)
                 );
+            });
 
-                let header_response = state.show_header(ui, |ui| {
-                    let response = ui.selectable_label(is_selected, format!("📁 {}", node.key));
-
-                    if response.clicked() {
-                        self.selected_topic = Some(full_path.clone());
-                        self.detail_view = DetailView::TopicDetails;
-                    }
-
-                    // Show child count
-                    ui.label(
-                        RichText::new(format!("({})", node.children.len()))
-                            .small()
-                            .color(ExplorerColors::TEXT_TERTIARY)
-                    );
-                });
-
-                header_response.body(|ui| {
-                    for (_, child) in &node.children {
-                        self.show_tree_node(ui, child, full_path.clone(), depth + 1);
-                    }
-                });
-            }
-        });
+            header_response.body(|ui| {
+                for (_, child) in &node.children {
+                    self.show_tree_node(ui, child, full_path.clone(), depth + 1);
+                }
+            });
+        }
     }
 
     /// Check if node or any descendant matches filter
@@ -1560,57 +1559,6 @@ impl ZenohExplorer {
         }
 
         false
-    }
-
-    /// Renders the Subscribe tab UI.
-    /// Allows users to create subscriptions and manage active ones.
-    fn show_subscribe_tab(&mut self, ui: &mut egui::Ui) {
-        // Show warning if not connected
-        if !matches!(self.connection_status, ConnectionStatus::Connected) {
-            ui.colored_label(ExplorerColors::ERROR, "⚠ Not connected. Please connect first.");
-            ui.separator();
-        }
-        // Subscription creation form
-        ui.group(|ui| {
-            ui.label("Subscribe to Key Expression");
-            ui.horizontal(|ui| {
-                ui.label("Key Expression:");
-                ui.text_edit_singleline(&mut self.subscribe_key);
-            });
-            // Subscribe button - only enabled when connected
-            let button = egui::Button::new("Subscribe");
-            if ui.add_enabled(
-                matches!(self.connection_status, ConnectionStatus::Connected) && !self.subscribe_key.is_empty(),
-                button
-            ).clicked() {
-                if let Some(sender) = &self.command_sender {
-                    let _ = sender.send(ZenohCommand::Subscribe {
-                        key_expr: self.subscribe_key.clone(),
-                        reliability: self.subscribe_reliability.clone(),
-                        mode: self.subscribe_mode.clone(),
-                    });
-                }
-            }
-        });
-
-        ui.separator();
-
-        // Active subscriptions
-        ui.label("Active Subscriptions:");
-        egui::ScrollArea::vertical().show(ui, |ui| {
-            for subscription in &self.subscriptions.clone() {
-                ui.horizontal(|ui| {
-                    ui.label(&subscription.key_expr);
-                    if ui.button("Unsubscribe").clicked() {
-                        if let Some(sender) = &self.command_sender {
-                            let _ = sender.send(ZenohCommand::Unsubscribe {
-                                subscription_id: subscription.id.clone(),
-                            });
-                        }
-                    }
-                });
-            }
-        });
     }
 
     /// Renders the Publish tab UI.
