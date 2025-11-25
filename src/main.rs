@@ -243,6 +243,8 @@ pub enum ZenohEvent {
     Disconnected,
     ConnectionError(String),
     MessageReceived(ZenohMessage),
+    /// Batch of messages for efficient UI updates
+    MessageBatch(Vec<ZenohMessage>),
     SubscriptionCreated {
         id: String,
         key_expr: String,
@@ -450,24 +452,32 @@ impl ZenohExplorer {
     /// Creates a new instance of the Zenoh Explorer application.
     /// Sets up communication channels and spawns the Zenoh worker thread.
     fn new() -> Self {
-        // Create channels for bi-directional communication between GUI and worker threads
+        // Create channels for tri-layer architecture:
+        // Worker -> Buffer Thread -> UI Thread
         let (command_sender, command_receiver) = mpsc::channel();
-        let (event_sender, event_receiver) = mpsc::channel();
+        let (worker_event_sender, buffer_receiver) = mpsc::channel(); // Worker to buffer
+        let (ui_sender, event_receiver) = mpsc::channel(); // Buffer to UI
 
         // Create shared key-value store for queryable
         let local_kvstore = Arc::new(RwLock::new(HashMap::new()));
         let kvstore_clone = local_kvstore.clone();
+
+        // Start message buffer thread (sits between worker and UI)
+        // Batches messages for efficient UI updates at 60fps
+        std::thread::spawn(move || {
+            message_buffer_thread(buffer_receiver, ui_sender);
+        });
 
         // Start the Zenoh worker in a separate async task
         // This handles all Zenoh operations without blocking the GUI
         std::thread::spawn(move || {
             let rt = tokio::runtime::Runtime::new().unwrap();
             rt.block_on(async {
-                zenoh_worker(command_receiver, event_sender, kvstore_clone).await;
+                zenoh_worker(command_receiver, worker_event_sender, kvstore_clone).await;
             });
         });
 
-        info!("ZenohExplorer initialized with worker thread");
+        info!("ZenohExplorer initialized with worker and buffer threads");
 
         Self {
             detail_view: DetailView::TopicDetails,
@@ -775,6 +785,46 @@ impl ZenohExplorer {
                         self.rate_limit_drops += 1;
                     }
                 }
+                ZenohEvent::MessageBatch(messages) => {
+                    // Process batch of messages efficiently
+                    for message in messages {
+                        // For query replies, handle "local wins" logic
+                        if message.message_type == MessageType::QueryReply {
+                            let existing_idx = self.messages.iter().position(|m|
+                                m.key == message.key && m.message_type == MessageType::QueryReply
+                            );
+
+                            if let Some(idx) = existing_idx {
+                                if message.is_local && !self.messages[idx].is_local {
+                                    self.messages[idx] = message.clone();
+                                    continue;
+                                } else if !message.is_local && self.messages[idx].is_local {
+                                    continue;
+                                }
+                            }
+                        }
+
+                        // Apply deduplication check
+                        if message.message_type != MessageType::QueryReply && self.is_duplicate(&message.key, &message.payload) {
+                            self.messages_deduped += 1;
+                            continue;
+                        }
+
+                        // Apply rate limiting
+                        if self.rate_limiter.check_and_update() {
+                            let is_query_reply = message.message_type == MessageType::QueryReply;
+
+                            self.add_message_to_browse_tree(&message);
+                            self.add_message_with_limits(message);
+
+                            if is_query_reply {
+                                self.query_alert = None;
+                            }
+                        } else {
+                            self.rate_limit_drops += 1;
+                        }
+                    }
+                }
                 ZenohEvent::SubscriptionCreated { id, key_expr } => {
                     self.subscriptions.push(Subscription {
                         id,
@@ -885,6 +935,74 @@ impl ZenohExplorer {
         // Add the new message
         self.current_memory_bytes += message_size;
         self.messages.push_back(message);
+    }
+}
+
+/// Message buffer thread that batches messages for efficient UI updates.
+/// This thread sits between the worker thread and UI thread to prevent flooding.
+///
+/// # Arguments
+/// * `buffer_receiver` - Channel to receive individual messages from worker
+/// * `ui_sender` - Channel to send batched messages to UI thread
+fn message_buffer_thread(
+    buffer_receiver: Receiver<ZenohEvent>,
+    ui_sender: Sender<ZenohEvent>,
+) {
+    info!("Message buffer thread started");
+
+    let batch_interval = std::time::Duration::from_millis(16); // ~60fps
+    let mut message_buffer: Vec<ZenohMessage> = Vec::with_capacity(100);
+
+    loop {
+        let deadline = std::time::Instant::now() + batch_interval;
+
+        // Collect messages until deadline or batch size limit
+        while std::time::Instant::now() < deadline {
+            match buffer_receiver.recv_timeout(std::time::Duration::from_millis(1)) {
+                Ok(event) => {
+                    match event {
+                        ZenohEvent::MessageReceived(msg) => {
+                            message_buffer.push(msg);
+                            // Flush if batch gets large
+                            if message_buffer.len() >= 50 {
+                                break;
+                            }
+                        }
+                        // Pass through non-message events immediately
+                        other_event => {
+                            // Flush any pending messages first
+                            if !message_buffer.is_empty() {
+                                let batch = std::mem::replace(&mut message_buffer, Vec::with_capacity(100));
+                                let _ = ui_sender.send(ZenohEvent::MessageBatch(batch));
+                            }
+                            let _ = ui_sender.send(other_event);
+                        }
+                    }
+                }
+                Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+                    // Timeout, flush batch
+                    break;
+                }
+                Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+                    // Worker disconnected, flush and exit
+                    if !message_buffer.is_empty() {
+                        let batch = std::mem::take(&mut message_buffer);
+                        let _ = ui_sender.send(ZenohEvent::MessageBatch(batch));
+                    }
+                    info!("Message buffer thread exiting - worker disconnected");
+                    return;
+                }
+            }
+        }
+
+        // Flush accumulated messages as batch
+        if !message_buffer.is_empty() {
+            let batch = std::mem::replace(&mut message_buffer, Vec::with_capacity(100));
+            if ui_sender.send(ZenohEvent::MessageBatch(batch)).is_err() {
+                info!("Message buffer thread exiting - UI disconnected");
+                return;
+            }
+        }
     }
 }
 
@@ -1709,6 +1827,13 @@ impl ZenohExplorer {
                     self.tree_filter.clear();
                 }
             });
+
+            // Clear selection button to return to All Messages view
+            if self.selected_topic.is_some() {
+                if ui.button("⬅ Back to All Messages").clicked() {
+                    self.selected_topic = None;
+                }
+            }
 
             ui.separator();
 
