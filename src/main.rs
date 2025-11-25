@@ -656,6 +656,13 @@ impl ZenohExplorer {
         ctx.animate_value_with_time(egui::Id::new(id), target, 0.1) // 100ms fade
     }
 
+    /// Create pulsing animation for warning indicators (60fps)
+    fn animate_pulse(&self, ctx: &egui::Context, _id: &str) -> f32 {
+        // Use sine wave for smooth pulsing: 0.7 to 1.0 range
+        let time = ctx.input(|i| i.time) as f32;
+        0.85 + (time * 3.0).sin() * 0.15 // Pulse between 0.7 and 1.0
+    }
+
     /// Compute hash for message deduplication
     fn compute_message_hash(key: &str, payload: &str) -> u64 {
         let mut hasher = std::collections::hash_map::DefaultHasher::new();
@@ -1488,14 +1495,23 @@ impl eframe::App for ZenohExplorer {
 
                         ui.separator();
 
-                        // Worker health indicator
+                        // Worker health indicator with pulsing animation
                         if !self.worker_healthy {
+                            let pulse = self.animate_pulse(ui.ctx(), "worker_health_pulse");
+                            let error_color = ExplorerColors::ERROR;
+                            let pulsing_color = egui::Color32::from_rgba_unmultiplied(
+                                error_color.r(),
+                                error_color.g(),
+                                error_color.b(),
+                                (255.0 * pulse) as u8,
+                            );
                             ui.label(
                                 RichText::new("⚠ Worker Unresponsive")
-                                    .color(ExplorerColors::ERROR)
+                                    .color(pulsing_color)
                                     .size(TEXT_SMALL_SIZE),
                             );
                             ui.separator();
+                            ui.ctx().request_repaint(); // Request continuous repaints for animation
                         }
 
                         // Connection status with loading indicator
@@ -1985,16 +2001,24 @@ impl ZenohExplorer {
             ui.horizontal(|ui| {
                 ui.add_space(indent);
 
-                // Local indicator - subtle filled circle
+                // Local indicator - subtle filled circle with fade-in animation
                 if node.is_local {
+                    let fade = self.animate_fade_in(ui.ctx(), &format!("local_leaf_{}", full_path), 1.0);
+                    let base_color = if self.dark_mode {
+                        ExplorerColors::DARK_SUCCESS
+                    } else {
+                        ExplorerColors::SUCCESS
+                    };
+                    let animated_color = egui::Color32::from_rgba_unmultiplied(
+                        base_color.r(),
+                        base_color.g(),
+                        base_color.b(),
+                        (255.0 * fade) as u8,
+                    );
                     ui.label(
                         RichText::new("●")
                             .size(8.0)
-                            .color(if self.dark_mode {
-                                ExplorerColors::DARK_SUCCESS
-                            } else {
-                                ExplorerColors::SUCCESS
-                            }),
+                            .color(animated_color),
                     ).on_hover_text("Published from this app");
                 }
 
@@ -2041,16 +2065,24 @@ impl ZenohExplorer {
                 ui.horizontal(|ui| {
                     ui.add_space(indent);
 
-                    // Local indicator - subtle filled circle
+                    // Local indicator - subtle filled circle with fade-in animation
                     if node.is_local {
+                        let fade = self.animate_fade_in(ui.ctx(), &format!("local_branch_{}", full_path), 1.0);
+                        let base_color = if self.dark_mode {
+                            ExplorerColors::DARK_SUCCESS
+                        } else {
+                            ExplorerColors::SUCCESS
+                        };
+                        let animated_color = egui::Color32::from_rgba_unmultiplied(
+                            base_color.r(),
+                            base_color.g(),
+                            base_color.b(),
+                            (255.0 * fade) as u8,
+                        );
                         ui.label(
                             RichText::new("●")
                                 .size(8.0)
-                                .color(if self.dark_mode {
-                                    ExplorerColors::DARK_SUCCESS
-                                } else {
-                                    ExplorerColors::SUCCESS
-                                }),
+                                .color(animated_color),
                         ).on_hover_text("Published from this app");
                     }
 
