@@ -207,6 +207,7 @@ The application uses a dual-thread architecture:
 - **For multicast discovery**: Leave locators empty in peer mode
 - **For specific endpoints**: Provide tcp/ip:port format
 - Peer mode enables automatic discovery of other peers via multicast
+- **Connection Retry Behavior**: When you specify a TCP locator in peer mode (e.g., `tcp/localhost:7447`), Zenoh will continuously attempt to connect to that endpoint with exponential backoff. This is normal behavior - Zenoh peers persistently try to establish connections to configured endpoints, even if they're unreachable. The retry period starts at 1 second and increases (1s, 2s, 4s, 4s...) up to a maximum period. This ensures peers can automatically reconnect when endpoints become available.
 - If peer mode shows "Worker Unresponsive", check logs with RUST_LOG=zenoh_explorer=info
 
 ### Query Functionality

@@ -434,6 +434,7 @@ struct ZenohExplorer {
     dedup_ttl: Duration,        // How long to remember message hashes
     dedup_enabled: bool,        // Whether deduplication is enabled
     messages_deduped: usize,    // Counter for deduplicated messages
+    #[allow(dead_code)] // Used in worker thread, not in main struct
     local_kvstore: Arc<RwLock<HashMap<String, (String, String)>>>, // Shared key-value store for queryable: key -> (payload, encoding)
     queryable_enabled: bool,    // Whether queryable is currently enabled
     queryable_pattern: String,  // Key expression pattern for queryable
@@ -746,8 +747,8 @@ impl ZenohExplorer {
                         }
                     }
 
-                    // Apply deduplication check
-                    if self.is_duplicate(&message.key, &message.payload) {
+                    // Apply deduplication check (but not for query replies - we want to see those every time)
+                    if message.message_type != MessageType::QueryReply && self.is_duplicate(&message.key, &message.payload) {
                         self.messages_deduped += 1;
                         continue; // Skip duplicate
                     }
@@ -1086,9 +1087,9 @@ async fn zenoh_worker(
                                 get_builder = get_builder.payload(value);
                             }
 
-                            // Use BestMatching target with no consolidation to get all replies including local
+                            // Use All target with no consolidation to get all replies including local
                             get_builder = get_builder
-                                .target(zenoh::query::QueryTarget::BestMatching)
+                                .target(zenoh::query::QueryTarget::All)
                                 .consolidation(zenoh::query::ConsolidationMode::None);
 
                             info!("Calling get_builder.timeout().await...");
@@ -1097,7 +1098,7 @@ async fn zenoh_worker(
                                 .await
                             {
                                 Ok(replies) => {
-                                    info!("Query sent successfully (target=BestMatching, consolidation=None), waiting for replies...");
+                                    info!("Query sent successfully (target=All, consolidation=None), waiting for replies...");
 
                                 let event_sender_query = event_sender.clone();
                                 let selector_clone = selector.clone();
@@ -1563,8 +1564,12 @@ impl eframe::App for ZenohExplorer {
                         ui.horizontal(|ui| {
                             ui.label("Locators:");
                             ui.text_edit_singleline(&mut self.locators);
+                            // Inline supported locators hint
+                            ui.label(RichText::new("(tcp/ udp/ quic/ ws/)").code().size(TEXT_SMALL_SIZE-2.0).color(self.text_tertiary_color()));
+                        });
+                        ui.horizontal(|ui| {
                             if self.connection_mode == "peer" && self.locators.is_empty() {
-                                ui.label(RichText::new("(using multicast discovery)").size(TEXT_SMALL_SIZE).color(self.text_secondary_color()));
+                                ui.label(RichText::new("Using multicast discovery").size(TEXT_SMALL_SIZE-1.0).italics().color(self.text_tertiary_color()));
                             }
                         });
                         ui.horizontal(|ui| {
@@ -2024,7 +2029,7 @@ impl ZenohExplorer {
                 }
             });
         } else {
-            // Branch node - collapsible (NOT inside horizontal layout)
+            // Branch node - collapsible with consistent spacing
             let id = egui::Id::new(format!("treenode_{}", full_path));
             let state = egui::collapsing_header::CollapsingState::load_with_default_open(
                 ui.ctx(),
@@ -2032,34 +2037,37 @@ impl ZenohExplorer {
                 false,
             );
 
-            ui.add_space(indent);
             let header_response = state.show_header(ui, |ui| {
-                // Local indicator - subtle filled circle
-                if node.is_local {
+                ui.horizontal(|ui| {
+                    ui.add_space(indent);
+
+                    // Local indicator - subtle filled circle
+                    if node.is_local {
+                        ui.label(
+                            RichText::new("●")
+                                .size(8.0)
+                                .color(if self.dark_mode {
+                                    ExplorerColors::DARK_SUCCESS
+                                } else {
+                                    ExplorerColors::SUCCESS
+                                }),
+                        ).on_hover_text("Published from this app");
+                    }
+
+                    let response = ui.selectable_label(is_selected, format!("📁 {}", node.key));
+
+                    if response.clicked() {
+                        self.selected_topic = Some(full_path.clone());
+                        self.detail_view = DetailView::TopicDetails;
+                    }
+
+                    // Show child count
                     ui.label(
-                        RichText::new("●")
-                            .size(8.0)
-                            .color(if self.dark_mode {
-                                ExplorerColors::DARK_SUCCESS
-                            } else {
-                                ExplorerColors::SUCCESS
-                            }),
-                    ).on_hover_text("Published from this app");
-                }
-
-                let response = ui.selectable_label(is_selected, format!("📁 {}", node.key));
-
-                if response.clicked() {
-                    self.selected_topic = Some(full_path.clone());
-                    self.detail_view = DetailView::TopicDetails;
-                }
-
-                // Show child count
-                ui.label(
-                    RichText::new(format!("({})", node.children.len()))
-                        .size(TEXT_SMALL_SIZE)
-                        .color(self.text_tertiary_color()),
-                );
+                        RichText::new(format!("({})", node.children.len()))
+                            .size(TEXT_SMALL_SIZE)
+                            .color(self.text_tertiary_color()),
+                    );
+                });
             });
 
             header_response.body(|ui| {
