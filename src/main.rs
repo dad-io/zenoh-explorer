@@ -1072,7 +1072,7 @@ impl ZenohExplorer {
     /// For large payloads: stores full in payload_store, truncates for messages list
     fn add_message_with_limits(&mut self, mut message: ZenohMessage) {
         const MAX_STORED_PAYLOAD: usize = 10 * 1024; // 10KB max in messages list
-        const MAX_EXPORT_PAYLOAD: usize = 100 * 1024 * 1024; // 100MB max for export store
+        const MAX_EXPORT_PAYLOAD: usize = 4 * 1024 * 1024 * 1024; // 4GB max for export store
 
         // Get raw bytes for storage - prefer payload_bytes if available, otherwise use payload string as UTF-8
         let raw_bytes = message.payload_bytes.take().unwrap_or_else(|| message.payload.as_bytes().to_vec());
@@ -1413,13 +1413,14 @@ async fn zenoh_worker(
                             // Use Block congestion control for large payloads to ensure delivery
                             let payload_len = payload.len();
 
-                            // Zenoh transport has a bug where it panics when trying to fragment
-                            // messages larger than ~500MB (it tries to buffer the entire message
-                            // before fragmenting, causing memory allocation failure).
-                            // For very large payloads, we chunk them at the application level.
-                            const CHUNK_SIZE: usize = 256 * 1024 * 1024; // 256MB chunks
+                            // Zenoh's Put codec uses Zenoh080Bounded::<u32> for payload size encoding,
+                            // which limits payloads to u32::MAX (~4GB). For payloads >= 4GB,
+                            // we must chunk them at the application level.
+                            // Using 1GB chunks to stay well under the limit.
+                            const CHUNK_SIZE: usize = 1024 * 1024 * 1024; // 1GB chunks
+                            const MAX_SINGLE_PAYLOAD: usize = 0xFFFF_FFFF; // u32::MAX (~4GB)
 
-                            if payload_len > CHUNK_SIZE {
+                            if payload_len > MAX_SINGLE_PAYLOAD {
                                 // Large payload - send in chunks
                                 let total_chunks = (payload_len + CHUNK_SIZE - 1) / CHUNK_SIZE;
                                 info!("Chunking {} byte payload into {} chunks of {}MB each",
