@@ -1416,8 +1416,9 @@ async fn zenoh_worker(
                             // Zenoh's Put codec uses Zenoh080Bounded::<u32> for payload size encoding,
                             // which limits payloads to u32::MAX (~4GB). For payloads >= 4GB,
                             // we must chunk them at the application level.
-                            // Using 1GB chunks to stay well under the limit.
-                            const CHUNK_SIZE: usize = 1024 * 1024 * 1024; // 1GB chunks
+                            // Using 64MB chunks to avoid overwhelming zenoh's transport queue.
+                            // Larger chunks cause "Unable to push non droppable network message" errors.
+                            const CHUNK_SIZE: usize = 64 * 1024 * 1024; // 64MB chunks
                             const MAX_SINGLE_PAYLOAD: usize = 0xFFFF_FFFF; // u32::MAX (~4GB)
 
                             if payload_len > MAX_SINGLE_PAYLOAD {
@@ -1774,6 +1775,28 @@ async fn connect_zenoh(
         .set_max_message_size(max_message_size)
         .unwrap();
     info!("Set max_message_size to {} bytes (100GB)", max_message_size);
+
+    // Set batch size to maximum (default on macOS is only 9216, max is 65535)
+    config.transport.link.tx.set_batch_size(65535).unwrap();
+
+    // Increase queue sizes to handle large payload bursts (default is 2, max is 16)
+    // This allows more batches to be queued before back-pressure kicks in
+    config.transport.link.tx.queue.size.set_data(16).unwrap();
+    config.transport.link.tx.queue.size.set_data_high(16).unwrap();
+    config.transport.link.tx.queue.size.set_data_low(16).unwrap();
+
+    // Increase wait_before_close timeout for Block congestion control (default: 5 seconds)
+    // Set to 5 minutes (300 seconds = 300_000_000 microseconds) to allow large transfers
+    config
+        .transport
+        .link
+        .tx
+        .queue
+        .congestion_control
+        .block
+        .set_wait_before_close(300_000_000)
+        .unwrap();
+    info!("Set batch_size to 65535, queue sizes to 16, wait_before_close to 300 seconds");
 
     // Parse and apply any additional configuration provided as JSON
     if !config_json.is_empty() && config_json != "{}" {
