@@ -157,6 +157,8 @@ pub struct ZenohMessage {
     pub size_bytes: usize,
     /// True if this message was published from this app instance
     pub is_local: bool,
+    /// Raw payload bytes for export (None = use payload string as UTF-8)
+    pub payload_bytes: Option<Vec<u8>>,
 }
 
 impl ZenohMessage {
@@ -167,6 +169,7 @@ impl ZenohMessage {
         self.key.capacity()
             + self.payload.capacity()
             + self.encoding.capacity()
+            + self.payload_bytes.as_ref().map_or(0, |v| v.capacity())
             + std::mem::size_of::<DateTime<Utc>>()
             + std::mem::size_of::<MessageType>()
             + std::mem::size_of::<usize>() // for size_bytes field
@@ -191,6 +194,31 @@ impl ZenohMessage {
             message_type,
             size_bytes: 0,
             is_local,
+            payload_bytes: None,
+        };
+        msg.size_bytes = msg.calculate_size();
+        msg
+    }
+
+    /// Create a new message with raw bytes
+    fn new_with_bytes(
+        key: String,
+        payload: String,
+        payload_bytes: Vec<u8>,
+        encoding: String,
+        timestamp: DateTime<Utc>,
+        message_type: MessageType,
+        is_local: bool,
+    ) -> Self {
+        let mut msg = Self {
+            key,
+            payload,
+            encoding,
+            timestamp,
+            message_type,
+            size_bytes: 0,
+            is_local,
+            payload_bytes: Some(payload_bytes),
         };
         msg.size_bytes = msg.calculate_size();
         msg
@@ -470,7 +498,7 @@ struct ZenohExplorer {
     expanded_payloads: std::collections::HashSet<String>, // Keys with expanded payloads (show full content)
     /// Full payload storage: key -> (full_payload, timestamp) - kept separate from UI for performance
     /// Export reads from here, UI shows truncated version from browse_tree
-    payload_store: Arc<RwLock<HashMap<String, (String, chrono::DateTime<chrono::Utc>)>>>,
+    payload_store: Arc<RwLock<HashMap<String, (Vec<u8>, chrono::DateTime<chrono::Utc>)>>>,
 }
 
 impl Default for ZenohExplorer {
@@ -1046,9 +1074,11 @@ impl ZenohExplorer {
         const MAX_STORED_PAYLOAD: usize = 10 * 1024; // 10KB max in messages list
         const MAX_EXPORT_PAYLOAD: usize = 100 * 1024 * 1024; // 100MB max for export store
 
-        let payload_len = message.payload.len();
+        // Get raw bytes for storage - prefer payload_bytes if available, otherwise use payload string as UTF-8
+        let raw_bytes = message.payload_bytes.take().unwrap_or_else(|| message.payload.as_bytes().to_vec());
+        let payload_len = raw_bytes.len();
 
-        // Store full payload for export - but use MOVE not clone for large payloads
+        // Store full payload bytes for export
         if payload_len <= MAX_EXPORT_PAYLOAD {
             if let Ok(mut store) = self.payload_store.try_write() {
                 if store.len() >= 500 {
@@ -1056,35 +1086,16 @@ impl ZenohExplorer {
                         store.remove(&key);
                     }
                 }
-                // MOVE the payload - we'll create truncated version below
-                let full_payload = std::mem::take(&mut message.payload);
-
-                // Create truncated version for messages list (safely handle UTF-8 boundaries)
-                if payload_len > MAX_STORED_PAYLOAD {
-                    let safe_end = safe_truncate_index(&full_payload, MAX_STORED_PAYLOAD);
-                    message.payload = full_payload[..safe_end].to_string();
-                    message.payload.push_str("... [truncated - use Export for full]");
-                    message.payload.shrink_to_fit();
-                } else {
-                    message.payload = full_payload.clone();
-                }
-
-                // Store full payload
-                store.insert(message.key.clone(), (full_payload, message.timestamp));
-            } else {
-                // Lock contended - just truncate, skip export storage
-                if payload_len > MAX_STORED_PAYLOAD {
-                    let safe_end = safe_truncate_index(&message.payload, MAX_STORED_PAYLOAD);
-                    message.payload = message.payload[..safe_end].to_string();
-                    message.payload.push_str("... [truncated]");
-                    message.payload.shrink_to_fit();
-                }
+                // Store raw bytes for export
+                store.insert(message.key.clone(), (raw_bytes, message.timestamp));
             }
-        } else {
-            // Payload too large even for export - just truncate
+        }
+
+        // Truncate display payload for messages list
+        if message.payload.len() > MAX_STORED_PAYLOAD {
             let safe_end = safe_truncate_index(&message.payload, MAX_STORED_PAYLOAD);
             message.payload = message.payload[..safe_end].to_string();
-            message.payload.push_str("... [truncated - too large]");
+            message.payload.push_str("... [truncated - use Export for full]");
             message.payload.shrink_to_fit();
         }
 
@@ -1304,17 +1315,29 @@ async fn zenoh_worker(
                                                 result = subscriber.recv_async() => {
                                                     match result {
                                                         Ok(sample) => {
-                                                            // Attempt to decode payload as string
-                                                            // Fall back to debug format for binary data
-                                                            let payload_raw =
+                                                            // Get raw bytes for export
+                                                            let raw_bytes: Vec<u8> = sample.payload().to_bytes().to_vec();
+
+                                                            // Attempt to decode payload as string for display
+                                                            // Fall back to hex dump for binary data
+                                                            let payload_display =
                                                                 match sample.payload().try_to_string() {
                                                                     Ok(s) => s.into_owned(),
-                                                                    Err(_) => format!("{:?}", sample.payload()),
+                                                                    Err(_) => {
+                                                                        // Show hex bytes for binary data
+                                                                        let hex: Vec<String> = raw_bytes.iter().take(256).map(|b| format!("{:02x}", b)).collect();
+                                                                        if raw_bytes.len() > 256 {
+                                                                            format!("[binary {} bytes] {}...", raw_bytes.len(), hex.join(" "))
+                                                                        } else {
+                                                                            format!("[binary {} bytes] {}", raw_bytes.len(), hex.join(" "))
+                                                                        }
+                                                                    }
                                                                 };
 
-                                                            let message = ZenohMessage::new(
+                                                            let message = ZenohMessage::new_with_bytes(
                                                                 sample.key_expr().to_string(),
-                                                                payload_raw,
+                                                                payload_display,
+                                                                raw_bytes,
                                                                 "text/plain".to_string(),
                                                                 Utc::now(),
                                                                 MessageType::Subscribe,
@@ -1361,24 +1384,49 @@ async fn zenoh_worker(
                         encoding,
                     } => {
                         if let Some(ref sess) = session {
-                            // Publish raw bytes to the Zenoh network
-                            let _ = sess
-                                .put(&key, payload.clone())
-                                .encoding(&encoding as &str)
-                                .await;
+                            // Generate display string - only preview, never clone full payload
+                            let payload_str = {
+                                let preview_len = payload.len().min(256);
+                                match std::str::from_utf8(&payload[..preview_len]) {
+                                    Ok(text) if payload.len() <= 256 => text.to_string(),
+                                    Ok(text) => format!("{}... [+{} bytes]", text, payload.len() - preview_len),
+                                    Err(_) => {
+                                        // Binary - show hex preview
+                                        let hex: Vec<String> = payload[..preview_len].iter().map(|b| format!("{:02x}", b)).collect();
+                                        if payload.len() > 256 {
+                                            format!("[binary {} bytes] {}...", payload.len(), hex.join(" "))
+                                        } else {
+                                            format!("[binary {} bytes] {}", payload.len(), hex.join(" "))
+                                        }
+                                    }
+                                }
+                            };
 
-                            // Convert to string for display (lossy for binary data)
-                            let payload_str = String::from_utf8_lossy(&payload).to_string();
-
-                            // Store in local kvstore for queryable responses (as string)
-                            if let Ok(mut store) = local_kvstore.write() {
-                                store.insert(key.clone(), (payload_str.clone(), encoding.clone()));
+                            // Store in local kvstore for queryable responses (only store small payloads)
+                            if payload.len() <= 10 * 1024 * 1024 { // 10MB limit for kvstore
+                                if let Ok(mut store) = local_kvstore.write() {
+                                    store.insert(key.clone(), (payload_str.clone(), encoding.clone()));
+                                }
                             }
 
-                            // Echo the published message back to the UI
-                            let message = ZenohMessage::new(
+                            // Publish raw bytes to the Zenoh network
+                            // Use Block congestion control for large payloads to ensure delivery
+                            let payload_len = payload.len();
+                            match sess
+                                .put(&key, payload.clone())
+                                .encoding(&encoding as &str)
+                                .congestion_control(zenoh::qos::CongestionControl::Block)
+                                .await
+                            {
+                                Ok(_) => info!("Published {} bytes to {}", payload_len, key),
+                                Err(e) => error!("Failed to publish to {}: {}", key, e),
+                            }
+
+                            // Echo the published message back to the UI with raw bytes preserved
+                            let message = ZenohMessage::new_with_bytes(
                                 key.clone(),
                                 payload_str,
+                                payload,  // Move, not clone
                                 encoding,
                                 Utc::now(),
                                 MessageType::Publish,
@@ -1433,15 +1481,27 @@ async fn zenoh_worker(
 
                                                 info!("Query reply is_local={}", is_local);
 
+                                                // Get raw bytes for export
+                                                let raw_bytes: Vec<u8> = sample.payload().to_bytes().to_vec();
+
                                                 let payload = match sample.payload().try_to_string()
                                                 {
                                                     Ok(s) => s.into_owned(),
-                                                    Err(_) => format!("{:?}", sample.payload()),
+                                                    Err(_) => {
+                                                        // Show hex bytes for binary data
+                                                        let hex: Vec<String> = raw_bytes.iter().take(256).map(|b| format!("{:02x}", b)).collect();
+                                                        if raw_bytes.len() > 256 {
+                                                            format!("[binary {} bytes] {}...", raw_bytes.len(), hex.join(" "))
+                                                        } else {
+                                                            format!("[binary {} bytes] {}", raw_bytes.len(), hex.join(" "))
+                                                        }
+                                                    }
                                                 };
 
-                                                let message = ZenohMessage::new(
+                                                let message = ZenohMessage::new_with_bytes(
                                                     sample.key_expr().to_string(),
                                                     payload,
+                                                    raw_bytes,
                                                     "text/plain".to_string(),
                                                     Utc::now(),
                                                     MessageType::QueryReply,
@@ -2322,7 +2382,8 @@ impl ZenohExplorer {
 
                             if !message.payload.is_empty() {
                                 let display_payload = if message.payload.len() > 200 {
-                                    format!("{}...", &message.payload[..200])
+                                    let end = safe_truncate_index(&message.payload, 200);
+                                    format!("{}...", &message.payload[..end])
                                 } else {
                                     message.payload.clone()
                                 };
@@ -2694,8 +2755,8 @@ impl ZenohExplorer {
                 .clicked()
             {
                 if let Some(sender) = &self.command_sender {
-                    // Use raw bytes if imported, otherwise convert text to bytes
-                    let payload_bytes = self.publish_payload_bytes.clone()
+                    // Use raw bytes if imported (take to avoid clone), otherwise convert text to bytes
+                    let payload_bytes = self.publish_payload_bytes.take()
                         .unwrap_or_else(|| self.publish_payload.as_bytes().to_vec());
 
                     let _ = sender.send(ZenohCommand::Publish {
@@ -2703,6 +2764,11 @@ impl ZenohExplorer {
                         payload: payload_bytes,
                         encoding: self.publish_encoding.clone(),
                     });
+
+                    // Clear the UI state since we moved the bytes
+                    self.publish_payload_filename = None;
+                    self.publish_payload = String::new();
+                    self.publish_payload_expanded = false;
                 }
             }
         });
@@ -2919,7 +2985,8 @@ impl ZenohExplorer {
                                 // Payload
                                 if !message.payload.is_empty() {
                                     let display_payload = if message.payload.len() > 500 {
-                                        format!("{}...", &message.payload[..500])
+                                        let end = safe_truncate_index(&message.payload, 500);
+                                        format!("{}...", &message.payload[..end])
                                     } else {
                                         message.payload.clone()
                                     };
@@ -3042,7 +3109,8 @@ impl ZenohExplorer {
                         // Payload (truncated)
                         if !message.payload.is_empty() {
                             let display_payload = if message.payload.len() > 200 {
-                                format!("{}...", &message.payload[..200])
+                                let end = safe_truncate_index(&message.payload, 200);
+                                format!("{}...", &message.payload[..end])
                             } else {
                                 message.payload.clone()
                             };
@@ -3106,27 +3174,28 @@ impl ZenohExplorer {
     }
 
     /// Export payload to a file with native file dialog
-    fn export_payload_to_file(&self, topic: &str, payload: &str) {
+    fn export_payload_to_file(&self, topic: &str, payload: &[u8]) {
         // Suggest filename based on topic (replace / with _)
         let suggested_name = topic.replace('/', "_");
         let suggested_name = if suggested_name.is_empty() {
-            "payload.txt".to_string()
+            "payload.bin".to_string()
         } else {
-            format!("{}.txt", suggested_name)
+            format!("{}.bin", suggested_name)
         };
 
         // Open native file save dialog
         if let Some(path) = rfd::FileDialog::new()
             .set_file_name(&suggested_name)
+            .add_filter("Binary Files", &["bin"])
             .add_filter("Text Files", &["txt"])
             .add_filter("JSON Files", &["json"])
             .add_filter("All Files", &["*"])
             .save_file()
         {
-            // Write payload to file as UTF-8
-            match std::fs::write(&path, payload.as_bytes()) {
+            // Write raw bytes to file
+            match std::fs::write(&path, payload) {
                 Ok(_) => {
-                    info!("Exported payload to: {}", path.display());
+                    info!("Exported {} bytes to: {}", payload.len(), path.display());
                 }
                 Err(e) => {
                     info!("Failed to export payload: {}", e);
