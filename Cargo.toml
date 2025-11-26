@@ -40,6 +40,9 @@ anyhow = "1.0"
 # Hashing for deduplication
 seahash = "4.1"
 
+# Native file dialogs
+rfd = "0.14"
+
 [[bin]]
 name = "zenoh-explorer"
 path = "src/main.rs"

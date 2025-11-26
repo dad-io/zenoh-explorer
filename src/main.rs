@@ -217,7 +217,7 @@ pub enum ZenohCommand {
     },
     Publish {
         key: String,
-        payload: String,
+        payload: Vec<u8>, // Raw bytes - can be text or binary
         encoding: String,
     },
     Query {
@@ -348,8 +348,14 @@ impl ConnectionStatus {
     }
 }
 
-/// Maximum size for a single message payload (10MB)
-const MAX_MESSAGE_SIZE: usize = 10 * 1024 * 1024;
+/// Maximum bytes to hash for deduplication (4KB instead of full payload)
+const MAX_HASH_BYTES: usize = 4 * 1024;
+
+/// UI preview size - only show this much in collapsed state (10KB)
+const PAYLOAD_PREVIEW_SIZE: usize = 10 * 1024;
+
+/// Aggressive UI truncation for display only (not storage) - 50KB
+const MAX_UI_DISPLAY_SIZE: usize = 50 * 1024;
 
 // Font sizes - ensuring readability across all interfaces
 const HEADING_LARGE_SIZE: f32 = 24.0;      // Main app title
@@ -409,6 +415,9 @@ struct ZenohExplorer {
     subscribe_mode: String,
     publish_key: String,
     publish_payload: String,
+    publish_payload_bytes: Option<Vec<u8>>, // Raw bytes from file import (None = use publish_payload as text)
+    publish_payload_filename: Option<String>, // Original filename for display
+    publish_payload_expanded: bool, // Whether to show full payload preview
     publish_encoding: String,
     query_selector: String,
     query_value: String,
@@ -440,6 +449,12 @@ struct ZenohExplorer {
     local_kvstore: Arc<RwLock<HashMap<String, (String, String)>>>, // Shared key-value store for queryable: key -> (payload, encoding)
     queryable_enabled: bool,    // Whether queryable is currently enabled
     queryable_pattern: String,  // Key expression pattern for queryable
+    paused_keys: std::collections::HashSet<String>, // Keys that are paused (won't update in UI)
+    json_parse_cache: std::collections::HashMap<u64, Option<String>>, // Cache for JSON parsing: payload_hash -> formatted JSON or None
+    expanded_payloads: std::collections::HashSet<String>, // Keys with expanded payloads (show full content)
+    /// Full payload storage: key -> (full_payload, timestamp) - kept separate from UI for performance
+    /// Export reads from here, UI shows truncated version from browse_tree
+    payload_store: Arc<RwLock<HashMap<String, (String, chrono::DateTime<chrono::Utc>)>>>,
 }
 
 impl Default for ZenohExplorer {
@@ -491,6 +506,9 @@ impl ZenohExplorer {
             subscribe_mode: "push".to_string(),
             publish_key: "demo/test".to_string(),
             publish_payload: "Hello Zenoh!".to_string(),
+            publish_payload_bytes: None,
+            publish_payload_filename: None,
+            publish_payload_expanded: false,
             publish_encoding: "text/plain".to_string(),
             query_selector: "demo/**".to_string(),
             query_value: "".to_string(),
@@ -521,6 +539,10 @@ impl ZenohExplorer {
             local_kvstore: Arc::new(RwLock::new(HashMap::new())),
             queryable_enabled: false,
             queryable_pattern: "**".to_string(), // Default to match all keys
+            paused_keys: std::collections::HashSet::new(),
+            json_parse_cache: std::collections::HashMap::new(),
+            expanded_payloads: std::collections::HashSet::new(),
+            payload_store: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 
@@ -674,12 +696,83 @@ impl ZenohExplorer {
     }
 
     /// Compute hash for message deduplication
+    /// Hashes: key + length + first 4KB + last 4KB (for large payloads)
+    /// This ensures different payloads get different hashes without O(n) full scan
     fn compute_message_hash(key: &str, payload: &str) -> u64 {
         let mut hasher = std::collections::hash_map::DefaultHasher::new();
         use std::hash::{Hash, Hasher};
         key.hash(&mut hasher);
-        payload.hash(&mut hasher);
+        payload.len().hash(&mut hasher);
+
+        if payload.len() > MAX_HASH_BYTES * 2 {
+            // Large payload: hash first 4KB + last 4KB
+            payload[..MAX_HASH_BYTES].hash(&mut hasher);
+            payload[payload.len() - MAX_HASH_BYTES..].hash(&mut hasher);
+        } else if payload.len() > MAX_HASH_BYTES {
+            // Medium payload: hash first 4KB
+            payload[..MAX_HASH_BYTES].hash(&mut hasher);
+        } else {
+            // Small payload: hash entire thing
+            payload.hash(&mut hasher);
+        }
         hasher.finish()
+    }
+
+    /// Compute hash for payload alone (for JSON cache)
+    /// OPTIMIZED: Only hashes first 4KB to avoid O(n) on large payloads
+    fn compute_payload_hash(payload: &str) -> u64 {
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        use std::hash::{Hash, Hasher};
+        let hash_slice = if payload.len() > MAX_HASH_BYTES {
+            &payload[..MAX_HASH_BYTES]
+        } else {
+            payload
+        };
+        hash_slice.hash(&mut hasher);
+        hasher.finish()
+    }
+
+    /// Get formatted JSON from cache or parse and cache it
+    /// Returns Some(formatted_json) if payload is valid JSON, None otherwise
+    /// OPTIMIZED: Only parses when needed, truncates large JSON to 50KB for UI
+    fn get_cached_json(&mut self, payload: &str) -> Option<String> {
+        // Skip JSON parsing for very large payloads - too expensive
+        if payload.len() > MAX_UI_DISPLAY_SIZE {
+            return None; // Will fall back to raw text display
+        }
+
+        let hash = Self::compute_payload_hash(payload);
+
+        // Check cache first
+        if let Some(cached) = self.json_parse_cache.get(&hash) {
+            return cached.clone();
+        }
+
+        // Parse JSON and cache the result
+        let result = if let Ok(json_value) = serde_json::from_str::<serde_json::Value>(payload) {
+            if let Ok(pretty) = serde_json::to_string_pretty(&json_value) {
+                // Truncate formatted JSON if still too large
+                if pretty.len() > MAX_UI_DISPLAY_SIZE {
+                    let mut truncated = pretty[..MAX_UI_DISPLAY_SIZE].to_string();
+                    truncated.push_str(&format!("\n... [+{} bytes of JSON hidden]", pretty.len() - MAX_UI_DISPLAY_SIZE));
+                    Some(truncated)
+                } else {
+                    Some(pretty)
+                }
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
+        // Clean cache if it gets too large (keep last 100 entries)
+        if self.json_parse_cache.len() > 100 {
+            self.json_parse_cache.clear();
+        }
+
+        self.json_parse_cache.insert(hash, result.clone());
+        result
     }
 
     /// Check if message is duplicate and update dedup cache
@@ -770,6 +863,11 @@ impl ZenohExplorer {
                         continue; // Skip duplicate
                     }
 
+                    // Skip paused keys (don't display updates for paused keys)
+                    if self.paused_keys.contains(&message.key) {
+                        continue;
+                    }
+
                     // Apply rate limiting
                     if self.rate_limiter.check_and_update() {
                         // Clear query alert if we received a query reply
@@ -807,6 +905,11 @@ impl ZenohExplorer {
                         // Apply deduplication check
                         if message.message_type != MessageType::QueryReply && self.is_duplicate(&message.key, &message.payload) {
                             self.messages_deduped += 1;
+                            continue;
+                        }
+
+                        // Skip paused keys
+                        if self.paused_keys.contains(&message.key) {
                             continue;
                         }
 
@@ -887,23 +990,84 @@ impl ZenohExplorer {
                 }
             }
 
+            // DUAL-PATH STORAGE:
+            // 1. Full payload -> payload_store (for export)
+            // 2. Truncated preview -> browse_tree (for UI display)
+
+            let payload_len = message.payload.len();
+
+            // FAST PATH: Create truncated preview first (10KB max)
+            // Use simple byte slicing - avoids O(n) char_indices iteration
+            let preview_end = PAYLOAD_PREVIEW_SIZE.min(payload_len);
+            let payload_for_tree = if payload_len > PAYLOAD_PREVIEW_SIZE {
+                // Simple truncation - find last valid UTF-8 boundary in first 10KB
+                let slice = &message.payload.as_bytes()[..preview_end];
+                let valid_end = std::str::from_utf8(slice)
+                    .map(|s| s.len())
+                    .unwrap_or_else(|e| e.valid_up_to());
+                let mut truncated = String::with_capacity(valid_end + 64);
+                truncated.push_str(&message.payload[..valid_end]);
+                truncated.push_str(&format!("\n... [+{} bytes - use Export for full]", payload_len - valid_end));
+                truncated
+            } else {
+                message.payload[..preview_end].to_string()
+            };
+
+            // Note: Full payload storage moved to add_message_with_limits() which owns the message
+
             // Update the leaf node with the message data
             // Only mark tree node as local if this is a Publish message (not query replies)
             let mark_as_local = message.is_local && message.message_type == MessageType::Publish;
-            current_node.update_data(message.payload.clone(), message.encoding.clone(), mark_as_local);
+            current_node.update_data(payload_for_tree, message.encoding.clone(), mark_as_local);
         }
     }
 
     /// Add a message while respecting memory and count limits
+    /// For large payloads: stores full in payload_store, truncates for messages list
     fn add_message_with_limits(&mut self, mut message: ZenohMessage) {
-        // Truncate oversized payloads for safety
-        if message.payload.len() > MAX_MESSAGE_SIZE {
-            message.payload.truncate(MAX_MESSAGE_SIZE);
-            message.payload.push_str("... [TRUNCATED]");
-            // Recalculate size after truncation
-            message.size_bytes = message.calculate_size();
+        const MAX_STORED_PAYLOAD: usize = 10 * 1024; // 10KB max in messages list
+        const MAX_EXPORT_PAYLOAD: usize = 100 * 1024 * 1024; // 100MB max for export store
+
+        let payload_len = message.payload.len();
+
+        // Store full payload for export - but use MOVE not clone for large payloads
+        if payload_len <= MAX_EXPORT_PAYLOAD {
+            if let Ok(mut store) = self.payload_store.try_write() {
+                if store.len() >= 500 {
+                    if let Some(key) = store.keys().next().cloned() {
+                        store.remove(&key);
+                    }
+                }
+                // MOVE the payload - we'll create truncated version below
+                let full_payload = std::mem::take(&mut message.payload);
+
+                // Create truncated version for messages list
+                if payload_len > MAX_STORED_PAYLOAD {
+                    message.payload = full_payload[..MAX_STORED_PAYLOAD].to_string();
+                    message.payload.push_str("... [truncated - use Export for full]");
+                    message.payload.shrink_to_fit();
+                } else {
+                    message.payload = full_payload.clone();
+                }
+
+                // Store full payload
+                store.insert(message.key.clone(), (full_payload, message.timestamp));
+            } else {
+                // Lock contended - just truncate, skip export storage
+                if payload_len > MAX_STORED_PAYLOAD {
+                    message.payload = message.payload[..MAX_STORED_PAYLOAD].to_string();
+                    message.payload.push_str("... [truncated]");
+                    message.payload.shrink_to_fit();
+                }
+            }
+        } else {
+            // Payload too large even for export - just truncate
+            message.payload = message.payload[..MAX_STORED_PAYLOAD].to_string();
+            message.payload.push_str("... [truncated - too large]");
+            message.payload.shrink_to_fit();
         }
 
+        message.size_bytes = message.calculate_size();
         let message_size = message.size_bytes;
         let max_memory_bytes = self.max_memory_mb * 1024 * 1024;
 
@@ -937,6 +1101,8 @@ impl ZenohExplorer {
         self.messages.push_back(message);
     }
 }
+
+// Removed truncate_payload - now done inline in update_browse_tree for tree only
 
 /// Message buffer thread that batches messages for efficient UI updates.
 /// This thread sits between the worker thread and UI thread to prevent flooding.
@@ -1174,22 +1340,24 @@ async fn zenoh_worker(
                         encoding,
                     } => {
                         if let Some(ref sess) = session {
-                            // Publish the data to the Zenoh network
+                            // Publish raw bytes to the Zenoh network
                             let _ = sess
                                 .put(&key, payload.clone())
                                 .encoding(&encoding as &str)
                                 .await;
 
-                            // Store in local kvstore for queryable responses
+                            // Convert to string for display (lossy for binary data)
+                            let payload_str = String::from_utf8_lossy(&payload).to_string();
+
+                            // Store in local kvstore for queryable responses (as string)
                             if let Ok(mut store) = local_kvstore.write() {
-                                store.insert(key.clone(), (payload.clone(), encoding.clone()));
+                                store.insert(key.clone(), (payload_str.clone(), encoding.clone()));
                             }
 
                             // Echo the published message back to the UI
-                            // This provides immediate feedback to the user
                             let message = ZenohMessage::new(
                                 key.clone(),
-                                payload,
+                                payload_str,
                                 encoding,
                                 Utc::now(),
                                 MessageType::Publish,
@@ -1864,7 +2032,7 @@ impl ZenohExplorer {
                 // Active subscriptions
                 if !self.subscriptions.is_empty() {
                     ui.label(RichText::new("Active:").size(SUBSCRIPTION_TEXT_SIZE));
-                    for subscription in &self.subscriptions.clone() {
+                    for subscription in &self.subscriptions {
                         ui.horizontal(|ui| {
                             ui.label(
                                 RichText::new(&subscription.key_expr).size(SUBSCRIPTION_TEXT_SIZE),
@@ -1886,15 +2054,16 @@ impl ZenohExplorer {
             // Topic tree
             ui.label(RichText::new("Topics").strong());
 
+            // Clone tree for rendering (necessary to avoid lifetime issues with RwLock)
+            let tree_clone = if let Ok(tree) = self.browse_tree.read() {
+                tree.clone()
+            } else {
+                ZenohNode::new("root".to_string())
+            };
+
             egui::ScrollArea::vertical()
                 .auto_shrink([false; 2])
                 .show(ui, |ui| {
-                    let tree_clone = if let Ok(tree) = self.browse_tree.read() {
-                        tree.clone()
-                    } else {
-                        ZenohNode::new("root".to_string())
-                    };
-
                     if tree_clone.children.is_empty() {
                         ui.vertical_centered(|ui| {
                             ui.add_space(32.0);
@@ -1940,131 +2109,212 @@ impl ZenohExplorer {
     fn show_topic_details(&mut self, ui: &mut egui::Ui) {
         if let Some(ref topic) = self.selected_topic.clone() {
             ui.heading(topic);
-            ui.separator();
 
-            // Get the node details
-            if let Ok(tree) = self.browse_tree.read() {
-                if let Some(node) = self.find_node(&tree, topic) {
-                    // Show node metadata
-                    ui.horizontal(|ui| {
-                        ui.label(RichText::new("Messages:").strong());
-                        ui.label(node.message_count.to_string());
-                    });
-
-                    if let Some(ref payload) = node.last_payload {
-                        ui.separator();
-                        ui.label(RichText::new("Current Value:").strong());
-
-                        // Try to parse and format as JSON
-                        if let Ok(json_value) = serde_json::from_str::<serde_json::Value>(payload) {
-                            if let Ok(pretty) = serde_json::to_string_pretty(&json_value) {
-                                egui::ScrollArea::vertical()
-                                    .id_salt(format!("json_payload_{}", topic))
-                                    .show(ui, |ui| {
-                                        ui.label(
-                                            RichText::new(&pretty)
-                                                .code()
-                                                .color(self.text_color())
-                                        );
-                                    });
-                            } else {
-                                ui.label(
-                                    RichText::new(payload)
-                                        .code()
-                                        .color(self.text_color())
-                                );
-                            }
-                        } else {
-                            egui::ScrollArea::vertical()
-                                .id_salt(format!("text_payload_{}", topic))
-                                .show(ui, |ui| {
-                                    ui.label(
-                                        RichText::new(payload)
-                                            .code()
-                                            .color(self.text_color())
-                                    );
-                                });
-                        }
-
-                        if let Some(ref encoding) = node.last_encoding {
-                            ui.separator();
-                            ui.horizontal(|ui| {
-                                ui.label(RichText::new("Encoding:").strong());
-                                ui.label(encoding);
-                            });
+            // Action buttons: Export and Pause/Resume
+            ui.horizontal(|ui| {
+                // Export button with subtle styling
+                // NOTE: Exports FULL payload from payload_store (not truncated tree/UI version)
+                if ui.button("💾 Export Payload").on_hover_text("Save full payload to file (original size)").clicked() {
+                    // Read from payload_store for FULL original payload
+                    if let Ok(store) = self.payload_store.read() {
+                        if let Some((payload, _ts)) = store.get(topic) {
+                            self.export_payload_to_file(topic, payload);
                         }
                     }
+                }
 
-                    ui.separator();
+                // Pause/Resume button with animated indicator
+                let is_paused = self.paused_keys.contains(topic);
+                let button_text = if is_paused { "▶ Resume" } else { "⏸ Pause" };
+                let button_color = if is_paused {
+                    ExplorerColors::WARNING
+                } else {
+                    self.text_secondary_color()
+                };
 
-                    // Show message history for this topic
-                    ui.label(RichText::new("Message History:").strong());
-                    egui::ScrollArea::vertical().show(ui, |ui| {
-                        let topic_messages: Vec<_> = self
-                            .messages
-                            .iter()
-                            .filter(|m| m.key == *topic)
-                            .rev()
-                            .take(50)
-                            .collect();
+                if ui.button(RichText::new(button_text).color(button_color))
+                    .on_hover_text(if is_paused {
+                        "Resume updates for this topic"
+                    } else {
+                        "Pause updates for this topic (messages still received, just not displayed)"
+                    })
+                    .clicked()
+                {
+                    if is_paused {
+                        self.paused_keys.remove(topic);
+                    } else {
+                        self.paused_keys.insert(topic.clone());
+                    }
+                }
 
-                        if topic_messages.is_empty() {
-                            ui.vertical_centered(|ui| {
-                                ui.add_space(16.0);
-                                ui.label(
-                                    RichText::new("No messages yet")
-                                        .size(HEADING_MEDIUM_SIZE)
-                                        .color(self.text_tertiary_color()),
-                                );
-                                ui.add_space(4.0);
-                                ui.label(
-                                    RichText::new("Waiting for messages on this topic...")
-                                        .italics()
-                                        .size(TEXT_SMALL_SIZE)
-                                        .color(self.text_secondary_color()),
-                                );
-                                ui.add_space(16.0);
-                            });
+                // Show paused indicator with subtle animation
+                if is_paused {
+                    ui.label(RichText::new("⏸ Paused").color(ExplorerColors::WARNING).size(TEXT_SMALL_SIZE));
+                }
+            });
+
+            ui.separator();
+
+            // Get the node details (extract data first to avoid borrow conflicts)
+            let (message_count, payload_opt, encoding_opt) = if let Ok(tree) = self.browse_tree.read() {
+                if let Some(node) = self.find_node(&tree, topic) {
+                    (
+                        node.message_count,
+                        node.last_payload.clone(),
+                        node.last_encoding.clone(),
+                    )
+                } else {
+                    (0, None, None)
+                }
+            } else {
+                (0, None, None)
+            };
+
+            // Show node metadata
+            ui.horizontal(|ui| {
+                ui.label(RichText::new("Messages:").strong());
+                ui.label(message_count.to_string());
+            });
+
+            if let Some(payload) = payload_opt {
+                ui.separator();
+                ui.label(RichText::new("Current Value:").strong());
+
+                // Collapsed: 1024 chars, Expanded: full preview (up to 10KB from tree)
+                const COLLAPSED_SIZE: usize = 1024;
+                let is_large = payload.len() > COLLAPSED_SIZE;
+                let is_expanded = self.expanded_payloads.contains(topic);
+
+                // Show collapse/expand button for payloads > 1KB
+                if is_large {
+                    let hidden_bytes = payload.len().saturating_sub(COLLAPSED_SIZE);
+                    let button_text = if is_expanded {
+                        "▼ Collapse".to_string()
+                    } else {
+                        format!("▶ Expand (+{} bytes)", hidden_bytes)
+                    };
+                    if ui.button(&button_text).clicked() {
+                        if is_expanded {
+                            self.expanded_payloads.remove(topic);
                         } else {
-                            for message in topic_messages {
-                                ui.group(|ui| {
-                                    ui.horizontal(|ui| {
-                                        ui.label(
-                                            RichText::new(
-                                                message
-                                                    .timestamp
-                                                    .format("%H:%M:%S%.3f")
-                                                    .to_string(),
-                                            )
-                                            .color(self.text_secondary_color())
-                                            .size(TEXT_SMALL_SIZE),
-                                        );
-                                        ui.label(
-                                            RichText::new(message.message_type.label())
-                                                .background_color(message.message_type.color())
-                                                .color(Color32::WHITE)
-                                                .size(TEXT_SMALL_SIZE),
-                                        );
-                                    });
-
-                                    if !message.payload.is_empty() {
-                                        let display_payload = if message.payload.len() > 200 {
-                                            format!("{}...", &message.payload[..200])
-                                        } else {
-                                            message.payload.clone()
-                                        };
-                                        ui.label(
-                                            RichText::new(display_payload)
-                                                .color(self.text_secondary_color())
-                                                .size(TEXT_SMALL_SIZE),
-                                        );
-                                    }
-                                });
-                            }
+                            self.expanded_payloads.insert(topic.clone());
                         }
+                    }
+                }
+
+                // Determine what to display
+                // Collapsed: first 1024 chars
+                // Expanded: full payload from tree (already truncated to 10KB at ingress)
+                let display_payload = if is_large && !is_expanded {
+                    let end = COLLAPSED_SIZE.min(payload.len());
+                    format!("{}...", &payload[..end])
+                } else {
+                    // Show full tree payload (already capped at 10KB preview)
+                    payload.clone()
+                };
+
+                // Try to parse and format as JSON (using cache) - skips if > 50KB
+                if let Some(pretty) = self.get_cached_json(&display_payload) {
+                    egui::ScrollArea::vertical()
+                        .id_salt(format!("json_payload_{}", topic))
+                        .max_height(400.0)
+                        .show(ui, |ui| {
+                            ui.label(
+                                RichText::new(&pretty)
+                                    .code()
+                                    .color(self.text_color())
+                            );
+                        });
+                } else {
+                    egui::ScrollArea::vertical()
+                        .id_salt(format!("text_payload_{}", topic))
+                        .max_height(400.0)
+                        .show(ui, |ui| {
+                            ui.label(
+                                RichText::new(&display_payload)
+                                    .code()
+                                    .color(self.text_color())
+                            );
+                        });
+                }
+
+                if let Some(encoding) = encoding_opt {
+                    ui.separator();
+                    ui.horizontal(|ui| {
+                        ui.label(RichText::new("Encoding:").strong());
+                        ui.label(encoding);
                     });
                 }
             }
+
+            ui.separator();
+
+            // Show message history for this topic
+            ui.label(RichText::new("Message History:").strong());
+            egui::ScrollArea::vertical().show(ui, |ui| {
+                let topic_messages: Vec<_> = self
+                    .messages
+                    .iter()
+                    .filter(|m| m.key == *topic)
+                    .rev()
+                    .take(50)
+                    .collect();
+
+                if topic_messages.is_empty() {
+                    ui.vertical_centered(|ui| {
+                        ui.add_space(16.0);
+                        ui.label(
+                            RichText::new("No messages yet")
+                                .size(HEADING_MEDIUM_SIZE)
+                                .color(self.text_tertiary_color()),
+                        );
+                        ui.add_space(4.0);
+                        ui.label(
+                            RichText::new("Waiting for messages on this topic...")
+                                .italics()
+                                .size(TEXT_SMALL_SIZE)
+                                .color(self.text_secondary_color()),
+                        );
+                        ui.add_space(16.0);
+                    });
+                } else {
+                    for message in topic_messages {
+                        ui.group(|ui| {
+                            ui.horizontal(|ui| {
+                                ui.label(
+                                    RichText::new(
+                                        message
+                                            .timestamp
+                                            .format("%H:%M:%S%.3f")
+                                            .to_string(),
+                                    )
+                                    .color(self.text_secondary_color())
+                                    .size(TEXT_SMALL_SIZE),
+                                );
+                                ui.label(
+                                    RichText::new(message.message_type.label())
+                                        .background_color(message.message_type.color())
+                                        .color(Color32::WHITE)
+                                        .size(TEXT_SMALL_SIZE),
+                                );
+                            });
+
+                            if !message.payload.is_empty() {
+                                let display_payload = if message.payload.len() > 200 {
+                                    format!("{}...", &message.payload[..200])
+                                } else {
+                                    message.payload.clone()
+                                };
+                                ui.label(
+                                    RichText::new(display_payload)
+                                        .color(self.text_secondary_color())
+                                        .size(TEXT_SMALL_SIZE),
+                                );
+                            }
+                        });
+                    }
+                }
+            });
         } else {
             // No topic selected - show all messages
             ui.heading("All Messages");
@@ -2268,14 +2518,126 @@ impl ZenohExplorer {
                 ui.label("Key:");
                 ui.text_edit_singleline(&mut self.publish_key);
             });
+
+            // Payload section with file import
             ui.horizontal(|ui| {
                 ui.label("Payload:");
-                ui.text_edit_multiline(&mut self.publish_payload);
+                if ui.button("📁 Import File").clicked() {
+                    if let Some(path) = rfd::FileDialog::new().pick_file() {
+                        match std::fs::read(&path) {
+                            Ok(bytes) => {
+                                self.publish_payload_filename = path.file_name()
+                                    .map(|n| n.to_string_lossy().to_string());
+                                // Show hex preview for binary, text for UTF-8
+                                self.publish_payload = if let Ok(text) = std::str::from_utf8(&bytes) {
+                                    text.to_string()
+                                } else {
+                                    // Show hex dump for binary files (first 1KB)
+                                    let preview_len = bytes.len().min(1024);
+                                    let hex: String = bytes[..preview_len]
+                                        .iter()
+                                        .map(|b| format!("{:02x} ", b))
+                                        .collect();
+                                    if bytes.len() > 1024 {
+                                        format!("{}... [{} bytes total]", hex, bytes.len())
+                                    } else {
+                                        hex
+                                    }
+                                };
+                                self.publish_payload_bytes = Some(bytes);
+                                self.publish_encoding = "application/octet-stream".to_string();
+                            }
+                            Err(e) => {
+                                self.publish_payload = format!("Error reading file: {}", e);
+                                self.publish_payload_bytes = None;
+                                self.publish_payload_filename = None;
+                            }
+                        }
+                    }
+                }
+                if self.publish_payload_bytes.is_some() {
+                    if ui.button("✖ Clear").clicked() {
+                        self.publish_payload_bytes = None;
+                        self.publish_payload_filename = None;
+                        self.publish_payload_expanded = false;
+                        self.publish_payload = "Hello Zenoh!".to_string();
+                        self.publish_encoding = "text/plain".to_string();
+                    }
+                }
             });
+
+            // Show filename and expand/collapse if imported
+            if let Some(ref filename) = self.publish_payload_filename.clone() {
+                // Get byte info before entering closure
+                let bytes_len = self.publish_payload_bytes.as_ref().map(|b| b.len());
+                let is_expanded = self.publish_payload_expanded;
+
+                ui.horizontal(|ui| {
+                    ui.label(RichText::new(format!("📄 {}", filename)).color(self.text_secondary_color()));
+                    if let Some(len) = bytes_len {
+                        ui.label(RichText::new(format!("({} bytes)", len)).color(self.text_tertiary_color()));
+
+                        // Expand/collapse button for large files
+                        if len > 1024 {
+                            let button_text = if is_expanded { "▼ Collapse" } else { "▶ Expand" };
+                            if ui.button(button_text).clicked() {
+                                self.publish_payload_expanded = !self.publish_payload_expanded;
+                            }
+                        }
+                    }
+                });
+
+                // Regenerate preview if expand state changed
+                if self.publish_payload_expanded != is_expanded {
+                    if let Some(ref bytes) = self.publish_payload_bytes {
+                        let preview_len = if self.publish_payload_expanded {
+                            bytes.len().min(10 * 1024) // 10KB max when expanded
+                        } else {
+                            1024 // 1KB when collapsed
+                        };
+
+                        self.publish_payload = if let Ok(text) = std::str::from_utf8(bytes) {
+                            if text.len() > preview_len {
+                                format!("{}...", &text[..preview_len])
+                            } else {
+                                text.to_string()
+                            }
+                        } else {
+                            // Hex dump
+                            let hex: String = bytes[..preview_len]
+                                .iter()
+                                .map(|b| format!("{:02x} ", b))
+                                .collect();
+                            if bytes.len() > preview_len {
+                                format!("{}... [{} bytes total]", hex, bytes.len())
+                            } else {
+                                hex
+                            }
+                        };
+                    }
+                }
+            }
+
+            // Payload text area (editable for text, read-only preview for binary)
+            let rows = if self.publish_payload_expanded { 12 } else { 4 };
+            let payload_response = ui.add(
+                egui::TextEdit::multiline(&mut self.publish_payload)
+                    .desired_rows(rows)
+                    .interactive(self.publish_payload_bytes.is_none()) // Read-only if file imported
+            );
+
+            // If user edits text, clear file import
+            if payload_response.changed() && self.publish_payload_bytes.is_some() {
+                self.publish_payload_bytes = None;
+                self.publish_payload_filename = None;
+                self.publish_payload_expanded = false;
+            }
+
             ui.horizontal(|ui| {
                 ui.label("Encoding:");
                 ui.text_edit_singleline(&mut self.publish_encoding);
             });
+
             // Publish button - only enabled when connected
             let button = egui::Button::new("Publish");
             if ui
@@ -2287,9 +2649,13 @@ impl ZenohExplorer {
                 .clicked()
             {
                 if let Some(sender) = &self.command_sender {
+                    // Use raw bytes if imported, otherwise convert text to bytes
+                    let payload_bytes = self.publish_payload_bytes.clone()
+                        .unwrap_or_else(|| self.publish_payload.as_bytes().to_vec());
+
                     let _ = sender.send(ZenohCommand::Publish {
                         key: self.publish_key.clone(),
-                        payload: self.publish_payload.clone(),
+                        payload: payload_bytes,
                         encoding: self.publish_encoding.clone(),
                     });
                 }
@@ -2447,12 +2813,13 @@ impl ZenohExplorer {
             ui.label(RichText::new("Query Results").strong());
             ui.separator();
 
-            // Filter messages to show only QueryReply type
-            let query_replies: Vec<&ZenohMessage> = self.messages
+            // Filter messages to show only QueryReply type (clone to avoid borrow conflicts)
+            let query_replies: Vec<ZenohMessage> = self.messages
                 .iter()
                 .filter(|m| m.message_type == MessageType::QueryReply)
                 .rev() // Most recent first
                 .take(50) // Limit to last 50 replies
+                .cloned()
                 .collect();
 
             if query_replies.is_empty() {
@@ -2477,7 +2844,7 @@ impl ZenohExplorer {
                     .auto_shrink([false; 2])
                     .max_height(400.0)
                     .show(ui, |ui| {
-                        for message in query_replies {
+                        for message in &query_replies {
                             ui.group(|ui| {
                                 ui.horizontal(|ui| {
                                     // Local indicator
@@ -2512,22 +2879,14 @@ impl ZenohExplorer {
                                         message.payload.clone()
                                     };
 
-                                    // Try to parse as JSON for pretty display
-                                    if let Ok(json_value) = serde_json::from_str::<serde_json::Value>(&display_payload) {
-                                        if let Ok(pretty) = serde_json::to_string_pretty(&json_value) {
-                                            ui.label(
-                                                RichText::new(pretty)
-                                                    .code()
-                                                    .color(self.text_color())
-                                                    .size(TEXT_SMALL_SIZE),
-                                            );
-                                        } else {
-                                            ui.label(
-                                                RichText::new(display_payload)
-                                                    .color(self.text_secondary_color())
-                                                    .size(TEXT_SMALL_SIZE),
-                                            );
-                                        }
+                                    // Try to parse as JSON for pretty display (using cache)
+                                    if let Some(pretty) = self.get_cached_json(&display_payload) {
+                                        ui.label(
+                                            RichText::new(pretty)
+                                                .code()
+                                                .color(self.text_color())
+                                                .size(TEXT_SMALL_SIZE),
+                                        );
                                     } else {
                                         ui.label(
                                             RichText::new(display_payload)
@@ -2603,10 +2962,20 @@ impl ZenohExplorer {
             .auto_shrink([false; 2])
             .stick_to_bottom(self.auto_scroll)
             .show(ui, |ui| {
-                for message in &self.messages {
+                // Only render the last 500 messages to prevent UI lag with very large message counts
+                const MAX_RENDERED_MESSAGES: usize = 500;
+                let start_idx = self.messages.len().saturating_sub(MAX_RENDERED_MESSAGES);
+
+                for message in self.messages.iter().skip(start_idx) {
+                    // OPTIMIZED: Only search first 4KB of payload to avoid O(n) on large payloads
+                    let payload_search_slice = if message.payload.len() > MAX_HASH_BYTES {
+                        &message.payload[..MAX_HASH_BYTES]
+                    } else {
+                        &message.payload
+                    };
                     if self.message_filter.is_empty()
                         || message.key.contains(&self.message_filter)
-                        || message.payload.contains(&self.message_filter)
+                        || payload_search_slice.contains(&self.message_filter)
                     {
                         ui.horizontal(|ui| {
                             // Message type badge
@@ -2692,5 +3061,35 @@ impl ZenohExplorer {
         ui.label("• demo/** - Match all keys under demo/");
         ui.label("• sensor/*/temperature - Match temperature under any sensor");
         ui.label("• device/1/status - Match exact key");
+    }
+
+    /// Export payload to a file with native file dialog
+    fn export_payload_to_file(&self, topic: &str, payload: &str) {
+        // Suggest filename based on topic (replace / with _)
+        let suggested_name = topic.replace('/', "_");
+        let suggested_name = if suggested_name.is_empty() {
+            "payload.txt".to_string()
+        } else {
+            format!("{}.txt", suggested_name)
+        };
+
+        // Open native file save dialog
+        if let Some(path) = rfd::FileDialog::new()
+            .set_file_name(&suggested_name)
+            .add_filter("Text Files", &["txt"])
+            .add_filter("JSON Files", &["json"])
+            .add_filter("All Files", &["*"])
+            .save_file()
+        {
+            // Write payload to file as UTF-8
+            match std::fs::write(&path, payload.as_bytes()) {
+                Ok(_) => {
+                    info!("Exported payload to: {}", path.display());
+                }
+                Err(e) => {
+                    info!("Failed to export payload: {}", e);
+                }
+            }
+        }
     }
 }
