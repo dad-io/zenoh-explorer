@@ -2267,11 +2267,55 @@ impl ZenohExplorer {
             ui.horizontal(|ui| {
                 // Export button with subtle styling
                 // NOTE: Exports FULL payload from payload_store (not truncated tree/UI version)
+                // For chunked payloads, reassembles chunks from topic/__chunk/...
                 if ui.button("💾 Export Payload").on_hover_text("Save full payload to file (original size)").clicked() {
                     // Read from payload_store for FULL original payload
                     if let Ok(store) = self.payload_store.read() {
+                        // First try direct lookup
                         if let Some((payload, _ts)) = store.get(topic) {
                             self.export_payload_to_file(topic, payload);
+                        } else {
+                            // Check for chunked payload: look for topic/__chunk/{size}/{count}/{index}
+                            let chunk_prefix = format!("{}/__chunk/", topic);
+                            let mut chunks: Vec<(usize, usize, usize, &Vec<u8>)> = Vec::new(); // (total_size, total_chunks, index, data)
+
+                            for (key, (data, _ts)) in store.iter() {
+                                if key.starts_with(&chunk_prefix) {
+                                    // Parse: topic/__chunk/{total_size}/{total_chunks}/{chunk_index}
+                                    let suffix = &key[chunk_prefix.len()..];
+                                    let parts: Vec<&str> = suffix.split('/').collect();
+                                    if parts.len() == 3 {
+                                        if let (Ok(total_size), Ok(total_chunks), Ok(chunk_idx)) = (
+                                            parts[0].parse::<usize>(),
+                                            parts[1].parse::<usize>(),
+                                            parts[2].parse::<usize>(),
+                                        ) {
+                                            chunks.push((total_size, total_chunks, chunk_idx, data));
+                                        }
+                                    }
+                                }
+                            }
+
+                            if !chunks.is_empty() {
+                                // Sort by chunk index
+                                chunks.sort_by_key(|(_, _, idx, _)| *idx);
+
+                                let (total_size, total_chunks, _, _) = chunks[0];
+
+                                // Verify we have all chunks
+                                if chunks.len() == total_chunks {
+                                    // Reassemble
+                                    let mut reassembled = Vec::with_capacity(total_size);
+                                    for (_, _, _, data) in &chunks {
+                                        reassembled.extend_from_slice(data);
+                                    }
+
+                                    info!("Reassembled {} chunks into {} bytes", chunks.len(), reassembled.len());
+                                    self.export_payload_to_file(topic, &reassembled);
+                                } else {
+                                    info!("Missing chunks: have {}/{}", chunks.len(), total_chunks);
+                                }
+                            }
                         }
                     }
                 }
@@ -2328,6 +2372,58 @@ impl ZenohExplorer {
                 ui.label(RichText::new("Messages:").strong());
                 ui.label(message_count.to_string());
             });
+
+            // Check for chunked payload and show info
+            let chunk_info = if let Ok(store) = self.payload_store.read() {
+                let chunk_prefix = format!("{}/__chunk/", topic);
+                let mut chunks: Vec<(usize, usize, usize)> = Vec::new(); // (total_size, total_chunks, index)
+
+                for (key, _) in store.iter() {
+                    if key.starts_with(&chunk_prefix) {
+                        let suffix = &key[chunk_prefix.len()..];
+                        let parts: Vec<&str> = suffix.split('/').collect();
+                        if parts.len() == 3 {
+                            if let (Ok(total_size), Ok(total_chunks), Ok(chunk_idx)) = (
+                                parts[0].parse::<usize>(),
+                                parts[1].parse::<usize>(),
+                                parts[2].parse::<usize>(),
+                            ) {
+                                chunks.push((total_size, total_chunks, chunk_idx));
+                            }
+                        }
+                    }
+                }
+
+                if !chunks.is_empty() {
+                    let (total_size, total_chunks, _) = chunks[0];
+                    Some((chunks.len(), total_chunks, total_size))
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
+
+            // Display chunk info if this is a chunked payload
+            if let Some((received, total, total_size)) = chunk_info {
+                ui.horizontal(|ui| {
+                    ui.label(RichText::new("📦 Chunked Payload:").strong().color(ExplorerColors::SUCCESS));
+                    let size_str = if total_size >= 1024 * 1024 * 1024 {
+                        format!("{:.2} GB", total_size as f64 / (1024.0 * 1024.0 * 1024.0))
+                    } else if total_size >= 1024 * 1024 {
+                        format!("{:.2} MB", total_size as f64 / (1024.0 * 1024.0))
+                    } else {
+                        format!("{} bytes", total_size)
+                    };
+                    ui.label(format!("{}/{} chunks received, {} total", received, total, size_str));
+                });
+                if received == total {
+                    ui.label(RichText::new("✓ All chunks received - click Export to reassemble").color(ExplorerColors::SUCCESS));
+                } else {
+                    ui.label(RichText::new(format!("⏳ Waiting for {} more chunks...", total - received)).color(ExplorerColors::WARNING));
+                }
+                ui.separator();
+            }
 
             if let Some(payload) = payload_opt {
                 ui.separator();
