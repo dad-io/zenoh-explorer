@@ -2634,14 +2634,15 @@ impl ZenohExplorer {
                         };
 
                         self.publish_payload = if let Ok(text) = std::str::from_utf8(bytes) {
-                            // Valid UTF-8 text
+                            // Valid UTF-8 text - use safe truncation
                             if total_len > preview_len {
-                                format!("{}... [+{} bytes]", &text[..preview_len], total_len - preview_len)
+                                let safe_end = safe_truncate_index(text, preview_len);
+                                format!("{}... [+{} bytes]", &text[..safe_end], total_len - safe_end)
                             } else {
                                 text.to_string()
                             }
                         } else {
-                            // Binary data - show hex dump
+                            // Binary data - show hex dump (byte slicing is safe)
                             let hex: String = bytes[..preview_len]
                                 .iter()
                                 .map(|b| format!("{:02x} ", b))
