@@ -357,6 +357,22 @@ const PAYLOAD_PREVIEW_SIZE: usize = 10 * 1024;
 /// Aggressive UI truncation for display only (not storage) - 50KB
 const MAX_UI_DISPLAY_SIZE: usize = 50 * 1024;
 
+/// Safely find a valid UTF-8 char boundary at or before the given index.
+/// Returns an index that is safe to use for string slicing.
+fn safe_truncate_index(s: &str, max_len: usize) -> usize {
+    if max_len >= s.len() {
+        return s.len();
+    }
+    // Find a valid char boundary at or before max_len
+    let bytes = s.as_bytes();
+    let mut end = max_len;
+    // UTF-8 continuation bytes start with 10xxxxxx (0x80-0xBF)
+    while end > 0 && end < bytes.len() && (bytes[end] & 0b11000000) == 0b10000000 {
+        end -= 1;
+    }
+    end
+}
+
 // Font sizes - ensuring readability across all interfaces
 const HEADING_LARGE_SIZE: f32 = 24.0;      // Main app title
 const HEADING_MEDIUM_SIZE: f32 = 18.0;     // Section headings
@@ -698,35 +714,41 @@ impl ZenohExplorer {
     /// Compute hash for message deduplication
     /// Hashes: key + length + first 4KB + last 4KB (for large payloads)
     /// This ensures different payloads get different hashes without O(n) full scan
+    /// Uses bytes to safely handle binary data that may have invalid UTF-8 sequences
     fn compute_message_hash(key: &str, payload: &str) -> u64 {
         let mut hasher = std::collections::hash_map::DefaultHasher::new();
         use std::hash::{Hash, Hasher};
         key.hash(&mut hasher);
-        payload.len().hash(&mut hasher);
 
-        if payload.len() > MAX_HASH_BYTES * 2 {
+        // Hash as bytes to avoid UTF-8 char boundary issues with binary data
+        let bytes = payload.as_bytes();
+        bytes.len().hash(&mut hasher);
+
+        if bytes.len() > MAX_HASH_BYTES * 2 {
             // Large payload: hash first 4KB + last 4KB
-            payload[..MAX_HASH_BYTES].hash(&mut hasher);
-            payload[payload.len() - MAX_HASH_BYTES..].hash(&mut hasher);
-        } else if payload.len() > MAX_HASH_BYTES {
+            bytes[..MAX_HASH_BYTES].hash(&mut hasher);
+            bytes[bytes.len() - MAX_HASH_BYTES..].hash(&mut hasher);
+        } else if bytes.len() > MAX_HASH_BYTES {
             // Medium payload: hash first 4KB
-            payload[..MAX_HASH_BYTES].hash(&mut hasher);
+            bytes[..MAX_HASH_BYTES].hash(&mut hasher);
         } else {
             // Small payload: hash entire thing
-            payload.hash(&mut hasher);
+            bytes.hash(&mut hasher);
         }
         hasher.finish()
     }
 
     /// Compute hash for payload alone (for JSON cache)
     /// OPTIMIZED: Only hashes first 4KB to avoid O(n) on large payloads
+    /// Uses bytes to safely handle binary data
     fn compute_payload_hash(payload: &str) -> u64 {
         let mut hasher = std::collections::hash_map::DefaultHasher::new();
         use std::hash::{Hash, Hasher};
-        let hash_slice = if payload.len() > MAX_HASH_BYTES {
-            &payload[..MAX_HASH_BYTES]
+        let bytes = payload.as_bytes();
+        let hash_slice = if bytes.len() > MAX_HASH_BYTES {
+            &bytes[..MAX_HASH_BYTES]
         } else {
-            payload
+            bytes
         };
         hash_slice.hash(&mut hasher);
         hasher.finish()
@@ -753,8 +775,9 @@ impl ZenohExplorer {
             if let Ok(pretty) = serde_json::to_string_pretty(&json_value) {
                 // Truncate formatted JSON if still too large
                 if pretty.len() > MAX_UI_DISPLAY_SIZE {
-                    let mut truncated = pretty[..MAX_UI_DISPLAY_SIZE].to_string();
-                    truncated.push_str(&format!("\n... [+{} bytes of JSON hidden]", pretty.len() - MAX_UI_DISPLAY_SIZE));
+                    let safe_end = safe_truncate_index(&pretty, MAX_UI_DISPLAY_SIZE);
+                    let mut truncated = pretty[..safe_end].to_string();
+                    truncated.push_str(&format!("\n... [+{} bytes of JSON hidden]", pretty.len() - safe_end));
                     Some(truncated)
                 } else {
                     Some(pretty)
@@ -997,20 +1020,15 @@ impl ZenohExplorer {
             let payload_len = message.payload.len();
 
             // FAST PATH: Create truncated preview first (10KB max)
-            // Use simple byte slicing - avoids O(n) char_indices iteration
-            let preview_end = PAYLOAD_PREVIEW_SIZE.min(payload_len);
+            // Use safe_truncate_index to handle UTF-8 boundaries correctly
             let payload_for_tree = if payload_len > PAYLOAD_PREVIEW_SIZE {
-                // Simple truncation - find last valid UTF-8 boundary in first 10KB
-                let slice = &message.payload.as_bytes()[..preview_end];
-                let valid_end = std::str::from_utf8(slice)
-                    .map(|s| s.len())
-                    .unwrap_or_else(|e| e.valid_up_to());
-                let mut truncated = String::with_capacity(valid_end + 64);
-                truncated.push_str(&message.payload[..valid_end]);
-                truncated.push_str(&format!("\n... [+{} bytes - use Export for full]", payload_len - valid_end));
+                let safe_end = safe_truncate_index(&message.payload, PAYLOAD_PREVIEW_SIZE);
+                let mut truncated = String::with_capacity(safe_end + 64);
+                truncated.push_str(&message.payload[..safe_end]);
+                truncated.push_str(&format!("\n... [+{} bytes - use Export for full]", payload_len - safe_end));
                 truncated
             } else {
-                message.payload[..preview_end].to_string()
+                message.payload.clone()
             };
 
             // Note: Full payload storage moved to add_message_with_limits() which owns the message
@@ -1041,9 +1059,10 @@ impl ZenohExplorer {
                 // MOVE the payload - we'll create truncated version below
                 let full_payload = std::mem::take(&mut message.payload);
 
-                // Create truncated version for messages list
+                // Create truncated version for messages list (safely handle UTF-8 boundaries)
                 if payload_len > MAX_STORED_PAYLOAD {
-                    message.payload = full_payload[..MAX_STORED_PAYLOAD].to_string();
+                    let safe_end = safe_truncate_index(&full_payload, MAX_STORED_PAYLOAD);
+                    message.payload = full_payload[..safe_end].to_string();
                     message.payload.push_str("... [truncated - use Export for full]");
                     message.payload.shrink_to_fit();
                 } else {
@@ -1055,14 +1074,16 @@ impl ZenohExplorer {
             } else {
                 // Lock contended - just truncate, skip export storage
                 if payload_len > MAX_STORED_PAYLOAD {
-                    message.payload = message.payload[..MAX_STORED_PAYLOAD].to_string();
+                    let safe_end = safe_truncate_index(&message.payload, MAX_STORED_PAYLOAD);
+                    message.payload = message.payload[..safe_end].to_string();
                     message.payload.push_str("... [truncated]");
                     message.payload.shrink_to_fit();
                 }
             }
         } else {
             // Payload too large even for export - just truncate
-            message.payload = message.payload[..MAX_STORED_PAYLOAD].to_string();
+            let safe_end = safe_truncate_index(&message.payload, MAX_STORED_PAYLOAD);
+            message.payload = message.payload[..safe_end].to_string();
             message.payload.push_str("... [truncated - too large]");
             message.payload.shrink_to_fit();
         }
@@ -2206,7 +2227,7 @@ impl ZenohExplorer {
                 // Collapsed: first 1024 chars
                 // Expanded: full payload from tree (already truncated to 10KB at ingress)
                 let display_payload = if is_large && !is_expanded {
-                    let end = COLLAPSED_SIZE.min(payload.len());
+                    let end = safe_truncate_index(&payload, COLLAPSED_SIZE);
                     format!("{}...", &payload[..end])
                 } else {
                     // Show full tree payload (already capped at 10KB preview)
@@ -2416,7 +2437,8 @@ impl ZenohExplorer {
                 // Show preview of last value
                 if let Some(ref payload) = node.last_payload {
                     let preview = if payload.len() > 30 {
-                        format!("{}...", &payload[..30])
+                        let end = safe_truncate_index(payload, 30);
+                        format!("{}...", &payload[..end])
                     } else {
                         payload.clone()
                     };
@@ -2528,22 +2550,33 @@ impl ZenohExplorer {
                             Ok(bytes) => {
                                 self.publish_payload_filename = path.file_name()
                                     .map(|n| n.to_string_lossy().to_string());
-                                // Show hex preview for binary, text for UTF-8
+                                self.publish_payload_expanded = false; // Start collapsed
+
+                                // Generate initial preview (collapsed = 256 bytes for compact view)
+                                let total_len = bytes.len();
+                                let preview_len = total_len.min(256);
+
                                 self.publish_payload = if let Ok(text) = std::str::from_utf8(&bytes) {
-                                    text.to_string()
+                                    // Valid UTF-8 text - use safe truncation
+                                    if total_len > preview_len {
+                                        let safe_end = safe_truncate_index(text, preview_len);
+                                        format!("{}... [+{} bytes]", &text[..safe_end], total_len - safe_end)
+                                    } else {
+                                        text.to_string()
+                                    }
                                 } else {
-                                    // Show hex dump for binary files (first 1KB)
-                                    let preview_len = bytes.len().min(1024);
+                                    // Binary data - show hex dump (byte slicing is safe)
                                     let hex: String = bytes[..preview_len]
                                         .iter()
                                         .map(|b| format!("{:02x} ", b))
                                         .collect();
-                                    if bytes.len() > 1024 {
-                                        format!("{}... [{} bytes total]", hex, bytes.len())
+                                    if total_len > preview_len {
+                                        format!("{}... [+{} bytes, {} total]", hex.trim(), total_len - preview_len, total_len)
                                     } else {
                                         hex
                                     }
                                 };
+
                                 self.publish_payload_bytes = Some(bytes);
                                 self.publish_encoding = "application/octet-stream".to_string();
                             }
@@ -2551,6 +2584,7 @@ impl ZenohExplorer {
                                 self.publish_payload = format!("Error reading file: {}", e);
                                 self.publish_payload_bytes = None;
                                 self.publish_payload_filename = None;
+                                self.publish_payload_expanded = false;
                             }
                         }
                     }
@@ -2570,46 +2604,50 @@ impl ZenohExplorer {
             if let Some(ref filename) = self.publish_payload_filename.clone() {
                 // Get byte info before entering closure
                 let bytes_len = self.publish_payload_bytes.as_ref().map(|b| b.len());
-                let is_expanded = self.publish_payload_expanded;
+                let was_expanded = self.publish_payload_expanded;
+                let mut should_regenerate = false;
 
                 ui.horizontal(|ui| {
                     ui.label(RichText::new(format!("📄 {}", filename)).color(self.text_secondary_color()));
                     if let Some(len) = bytes_len {
                         ui.label(RichText::new(format!("({} bytes)", len)).color(self.text_tertiary_color()));
 
-                        // Expand/collapse button for large files
-                        if len > 1024 {
-                            let button_text = if is_expanded { "▼ Collapse" } else { "▶ Expand" };
+                        // Expand/collapse button for files > 256 bytes
+                        if len > 256 {
+                            let button_text = if was_expanded { "▼ Collapse" } else { "▶ Expand" };
                             if ui.button(button_text).clicked() {
-                                self.publish_payload_expanded = !self.publish_payload_expanded;
+                                self.publish_payload_expanded = !was_expanded;
+                                should_regenerate = true;
                             }
                         }
                     }
                 });
 
                 // Regenerate preview if expand state changed
-                if self.publish_payload_expanded != is_expanded {
+                if should_regenerate {
                     if let Some(ref bytes) = self.publish_payload_bytes {
+                        let total_len = bytes.len();
                         let preview_len = if self.publish_payload_expanded {
-                            bytes.len().min(10 * 1024) // 10KB max when expanded
+                            total_len.min(4 * 1024) // 4KB max when expanded
                         } else {
-                            1024 // 1KB when collapsed
+                            total_len.min(256) // 256 bytes when collapsed
                         };
 
                         self.publish_payload = if let Ok(text) = std::str::from_utf8(bytes) {
-                            if text.len() > preview_len {
-                                format!("{}...", &text[..preview_len])
+                            // Valid UTF-8 text
+                            if total_len > preview_len {
+                                format!("{}... [+{} bytes]", &text[..preview_len], total_len - preview_len)
                             } else {
                                 text.to_string()
                             }
                         } else {
-                            // Hex dump
+                            // Binary data - show hex dump
                             let hex: String = bytes[..preview_len]
                                 .iter()
                                 .map(|b| format!("{:02x} ", b))
                                 .collect();
-                            if bytes.len() > preview_len {
-                                format!("{}... [{} bytes total]", hex, bytes.len())
+                            if total_len > preview_len {
+                                format!("{}... [+{} bytes, {} total]", hex.trim(), total_len - preview_len, total_len)
                             } else {
                                 hex
                             }
@@ -2619,12 +2657,18 @@ impl ZenohExplorer {
             }
 
             // Payload text area (editable for text, read-only preview for binary)
-            let rows = if self.publish_payload_expanded { 12 } else { 4 };
-            let payload_response = ui.add(
-                egui::TextEdit::multiline(&mut self.publish_payload)
-                    .desired_rows(rows)
-                    .interactive(self.publish_payload_bytes.is_none()) // Read-only if file imported
-            );
+            // Use fixed max height with scroll to prevent pushing buttons off screen
+            let max_height = if self.publish_payload_expanded { 200.0 } else { 80.0 };
+            let payload_response = egui::ScrollArea::vertical()
+                .max_height(max_height)
+                .show(ui, |ui| {
+                    ui.add(
+                        egui::TextEdit::multiline(&mut self.publish_payload)
+                            .desired_width(f32::INFINITY)
+                            .interactive(self.publish_payload_bytes.is_none()) // Read-only if file imported
+                            .font(egui::TextStyle::Monospace)
+                    )
+                }).inner;
 
             // If user edits text, clear file import
             if payload_response.changed() && self.publish_payload_bytes.is_some() {
@@ -2968,11 +3012,8 @@ impl ZenohExplorer {
 
                 for message in self.messages.iter().skip(start_idx) {
                     // OPTIMIZED: Only search first 4KB of payload to avoid O(n) on large payloads
-                    let payload_search_slice = if message.payload.len() > MAX_HASH_BYTES {
-                        &message.payload[..MAX_HASH_BYTES]
-                    } else {
-                        &message.payload
-                    };
+                    let search_end = safe_truncate_index(&message.payload, MAX_HASH_BYTES);
+                    let payload_search_slice = &message.payload[..search_end];
                     if self.message_filter.is_empty()
                         || message.key.contains(&self.message_filter)
                         || payload_search_slice.contains(&self.message_filter)
