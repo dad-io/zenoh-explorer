@@ -1412,28 +1412,88 @@ async fn zenoh_worker(
                             // Publish raw bytes to the Zenoh network
                             // Use Block congestion control for large payloads to ensure delivery
                             let payload_len = payload.len();
-                            match sess
-                                .put(&key, payload.clone())
-                                .encoding(&encoding as &str)
-                                .congestion_control(zenoh::qos::CongestionControl::Block)
-                                .await
-                            {
-                                Ok(_) => info!("Published {} bytes to {}", payload_len, key),
-                                Err(e) => error!("Failed to publish to {}: {}", key, e),
+
+                            // Zenoh transport has a bug where it panics when trying to fragment
+                            // messages larger than ~500MB (it tries to buffer the entire message
+                            // before fragmenting, causing memory allocation failure).
+                            // For very large payloads, we chunk them at the application level.
+                            const CHUNK_SIZE: usize = 256 * 1024 * 1024; // 256MB chunks
+
+                            if payload_len > CHUNK_SIZE {
+                                // Large payload - send in chunks
+                                let total_chunks = (payload_len + CHUNK_SIZE - 1) / CHUNK_SIZE;
+                                info!("Chunking {} byte payload into {} chunks of {}MB each",
+                                      payload_len, total_chunks, CHUNK_SIZE / 1024 / 1024);
+
+                                let mut chunk_num = 0;
+                                let mut offset = 0;
+                                let mut all_ok = true;
+
+                                while offset < payload_len {
+                                    let end = std::cmp::min(offset + CHUNK_SIZE, payload_len);
+                                    let chunk = payload[offset..end].to_vec();
+                                    let chunk_key = format!("{}/__chunk/{}/{}/{}",
+                                                           key, payload_len, total_chunks, chunk_num);
+
+                                    match sess
+                                        .put(&chunk_key, chunk)
+                                        .encoding(&encoding as &str)
+                                        .congestion_control(zenoh::qos::CongestionControl::Block)
+                                        .await
+                                    {
+                                        Ok(_) => info!("Published chunk {}/{} ({} bytes) to {}",
+                                                      chunk_num + 1, total_chunks, end - offset, chunk_key),
+                                        Err(e) => {
+                                            error!("Failed to publish chunk {} to {}: {}", chunk_num, chunk_key, e);
+                                            all_ok = false;
+                                            break;
+                                        }
+                                    }
+
+                                    offset = end;
+                                    chunk_num += 1;
+                                }
+
+                                if all_ok {
+                                    info!("Successfully published all {} chunks for {}", total_chunks, key);
+                                }
+                                // Don't echo - chunked payloads are not displayed directly
+                            } else if payload_len > 100 * 1024 * 1024 {
+                                // Medium-large payload (100MB-256MB) - send directly but don't echo
+                                match sess
+                                    .put(&key, payload)  // Move directly, no clone
+                                    .encoding(&encoding as &str)
+                                    .congestion_control(zenoh::qos::CongestionControl::Block)
+                                    .await
+                                {
+                                    Ok(_) => info!("Published {} bytes to {} (large payload, no echo)", payload_len, key),
+                                    Err(e) => error!("Failed to publish to {}: {}", key, e),
+                                }
+                                // Don't echo - too large. Subscription will receive it.
+                            } else {
+                                match sess
+                                    .put(&key, payload.clone())
+                                    .encoding(&encoding as &str)
+                                    .congestion_control(zenoh::qos::CongestionControl::Block)
+                                    .await
+                                {
+                                    Ok(_) => info!("Published {} bytes to {}", payload_len, key),
+                                    Err(e) => error!("Failed to publish to {}: {}", key, e),
+                                }
+
+                                // Echo the published message back to the UI with raw bytes preserved
+                                let message = ZenohMessage::new_with_bytes(
+                                    key.clone(),
+                                    payload_str,
+                                    payload,  // Move, not clone
+                                    encoding,
+                                    Utc::now(),
+                                    MessageType::Publish,
+                                    true,  // Published from this app, so it's local
+                                );
+
+                                let _ = event_sender.send(ZenohEvent::MessageReceived(message));
                             }
-
-                            // Echo the published message back to the UI with raw bytes preserved
-                            let message = ZenohMessage::new_with_bytes(
-                                key.clone(),
-                                payload_str,
-                                payload,  // Move, not clone
-                                encoding,
-                                Utc::now(),
-                                MessageType::Publish,
-                                true,  // Published from this app, so it's local
-                            );
-
-                            let _ = event_sender.send(ZenohEvent::MessageReceived(message));
                         }
                     }
                     ZenohCommand::Query {
@@ -1702,6 +1762,17 @@ async fn connect_zenoh(
     );
 
     let mut config = zenoh::config::Config::default();
+
+    // Set max_message_size to 100GB to allow very large payloads (default is 1GB)
+    // This is needed for publishing files larger than 1GB
+    let max_message_size: usize = 100 * 1024 * 1024 * 1024; // 100GB
+    config
+        .transport
+        .link
+        .rx
+        .set_max_message_size(max_message_size)
+        .unwrap();
+    info!("Set max_message_size to {} bytes (100GB)", max_message_size);
 
     // Parse and apply any additional configuration provided as JSON
     if !config_json.is_empty() && config_json != "{}" {
