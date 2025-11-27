@@ -1785,6 +1785,9 @@ async fn connect_zenoh(
     config.transport.link.tx.queue.size.set_data_high(16).unwrap();
     config.transport.link.tx.queue.size.set_data_low(16).unwrap();
 
+    // Disable batching delay - send immediately without waiting to batch
+    config.transport.link.tx.queue.batching.set_enabled(false).unwrap();
+
     // Increase wait_before_close timeout for Block congestion control (default: 5 seconds)
     // Set to 5 minutes (300 seconds = 300_000_000 microseconds) to allow large transfers
     config
@@ -1796,7 +1799,7 @@ async fn connect_zenoh(
         .block
         .set_wait_before_close(300_000_000)
         .unwrap();
-    info!("Set batch_size to 65535, queue sizes to 16, wait_before_close to 300 seconds");
+    info!("Set batch_size to 65535, queue sizes to 16, batching disabled, wait_before_close to 300 seconds");
 
     // Parse and apply any additional configuration provided as JSON
     if !config_json.is_empty() && config_json != "{}" {
