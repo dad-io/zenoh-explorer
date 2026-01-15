@@ -9,7 +9,6 @@ use chrono::{DateTime, Utc};
 use eframe::egui;
 use egui::{Color32, Margin, RichText};
 use std::collections::{BTreeMap, HashMap, VecDeque};
-// Removed unused imports
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::{Arc, RwLock};
 use std::time::{Duration, Instant};
@@ -84,7 +83,7 @@ fn main() -> eframe::Result<()> {
         "Zenoh Explorer",
         options,
         Box::new(|_cc| {
-            info!("Creating ZenohExplorer instance...");
+            info!("Creating Zenoh Explorer instance...");
             Ok(Box::new(ZenohExplorer::new()))
         }),
     )
@@ -163,9 +162,7 @@ pub struct ZenohMessage {
 
 impl ZenohMessage {
     /// Calculate the approximate memory footprint of this message
-    /// Includes string capacity (not just length) and heap allocation overhead
     fn calculate_size(&self) -> usize {
-        // String capacity is more accurate than length for actual memory usage
         self.key.capacity()
             + self.payload.capacity()
             + self.encoding.capacity()
@@ -175,29 +172,6 @@ impl ZenohMessage {
             + std::mem::size_of::<usize>() // for size_bytes field
             + std::mem::size_of::<Self>() // struct size
             + 24 // Approximate heap allocation overhead per string (3 strings * 8 bytes)
-    }
-
-    /// Create a new message and calculate its size
-    fn new(
-        key: String,
-        payload: String,
-        encoding: String,
-        timestamp: DateTime<Utc>,
-        message_type: MessageType,
-        is_local: bool,
-    ) -> Self {
-        let mut msg = Self {
-            key,
-            payload,
-            encoding,
-            timestamp,
-            message_type,
-            size_bytes: 0,
-            is_local,
-            payload_bytes: None,
-        };
-        msg.size_bytes = msg.calculate_size();
-        msg
     }
 
     /// Create a new message with raw bytes
@@ -226,11 +200,11 @@ impl ZenohMessage {
 }
 
 /// Commands sent from the GUI thread to the Zenoh worker thread.
-/// This enables thread-safe communication for all Zenoh operations.
 #[derive(Debug)]
 pub enum ZenohCommand {
     Connect {
         locators: String,
+        listen_port: String,  // Port to listen on in peer mode
         mode: String,
         config_json: String,
     },
@@ -245,7 +219,7 @@ pub enum ZenohCommand {
     },
     Publish {
         key: String,
-        payload: Vec<u8>, // Raw bytes - can be text or binary
+        payload: Vec<u8>, // Raw bytes
         encoding: String,
     },
     Query {
@@ -257,21 +231,23 @@ pub enum ZenohCommand {
     EnableQueryable {
         key_expr: String,
     },
-    /// Disable queryable
     DisableQueryable,
     /// Health check ping to verify worker thread is alive
     Ping,
 }
 
-/// Events sent from the Zenoh worker thread back to the GUI thread.
-/// These events update the UI state based on network activity.
+/// Events sent from the Zenoh worker thread back to the GUI thread based on network activity
 #[derive(Debug)]
 pub enum ZenohEvent {
     Connected,
     Disconnected,
+    DiscoveryUpdate {
+        peers: usize,
+        routers: usize,
+    },
     ConnectionError(String),
     MessageReceived(ZenohMessage),
-    /// Batch of messages for efficient UI updates
+    /// Batch messages for efficient UI updates
     MessageBatch(Vec<ZenohMessage>),
     SubscriptionCreated {
         id: String,
@@ -333,27 +309,18 @@ pub struct Subscription {
 /// View modes for the right panel detail area
 #[derive(PartialEq, Debug, Clone)]
 enum DetailView {
-    /// Show topic details and message history
     TopicDetails,
-    /// Show publish interface
     Publish,
-    /// Show query interface
     Query,
-    /// Show help information
     Help,
 }
 
 /// Current status of the Zenoh connection.
-/// Used to update UI elements and control available actions.
 #[derive(PartialEq)]
 enum ConnectionStatus {
-    /// Not connected to any Zenoh network
     Disconnected,
-    /// Connection attempt in progress
     Connecting,
-    /// Successfully connected to Zenoh network
     Connected,
-    /// Connection failed with error message
     Error(String),
 }
 
@@ -379,14 +346,13 @@ impl ConnectionStatus {
 /// Maximum bytes to hash for deduplication (4KB instead of full payload)
 const MAX_HASH_BYTES: usize = 4 * 1024;
 
-/// UI preview size - only show this much in collapsed state (10KB)
+/// UI preview size
 const PAYLOAD_PREVIEW_SIZE: usize = 10 * 1024;
 
-/// Aggressive UI truncation for display only (not storage) - 50KB
+/// Message truncation size for display
 const MAX_UI_DISPLAY_SIZE: usize = 50 * 1024;
 
-/// Safely find a valid UTF-8 char boundary at or before the given index.
-/// Returns an index that is safe to use for string slicing.
+/// Safely find a valid UTF-8 char boundary at or before the given index
 fn safe_truncate_index(s: &str, max_len: usize) -> usize {
     if max_len >= s.len() {
         return s.len();
@@ -401,12 +367,12 @@ fn safe_truncate_index(s: &str, max_len: usize) -> usize {
     end
 }
 
-// Font sizes - ensuring readability across all interfaces
+// Font sizes 
 const HEADING_LARGE_SIZE: f32 = 24.0;      // Main app title
 const HEADING_MEDIUM_SIZE: f32 = 18.0;     // Section headings
-const TEXT_SMALL_SIZE: f32 = 13.0;         // Secondary info (never smaller - minimum readable size)
-const TOPIC_PREVIEW_TEXT_SIZE: f32 = 13.0; // Topic preview in tree (subtle, not dominant)
-const SUBSCRIPTION_TEXT_SIZE: f32 = 13.0;  // Subscription list items (matches menu text)
+const TEXT_SMALL_SIZE: f32 = 13.0;         // Secondary info 
+const TOPIC_PREVIEW_TEXT_SIZE: f32 = 13.0; // Topic preview in tree
+const SUBSCRIPTION_TEXT_SIZE: f32 = 13.0;  // Subscription list items
 
 /// Tracks message rate to prevent flooding
 struct RateLimiter {
@@ -443,15 +409,17 @@ impl RateLimiter {
     }
 }
 
-/// Main application state for Zenoh Explorer.
-/// Contains all UI state, configuration, and communication channels.
+/// Main application state, contains all UI state, configuration, and communication channels.
 struct ZenohExplorer {
-    /// Current detail view mode
     detail_view: DetailView,
     connection_status: ConnectionStatus,
-    /// Currently selected node path in the tree
+    discovered_peers: usize,
+    discovered_routers: usize,
     selected_topic: Option<String>,
-    locators: String,
+    connect_transport: String,  // tcp, udp, quic, ws, tls
+    connect_address: String,    // hostname or IP
+    connect_port: String,       // port number
+    listen_port: String,        // Port to listen on in peer mode
     connection_mode: String,
     config_json: String,
     subscribe_key: String,
@@ -459,7 +427,7 @@ struct ZenohExplorer {
     subscribe_mode: String,
     publish_key: String,
     publish_payload: String,
-    publish_payload_bytes: Option<Vec<u8>>, // Raw bytes from file import (None = use publish_payload as text)
+    publish_payload_bytes: Option<Vec<u8>>, // Raw bytes from file import, none uses publish_payload as text
     publish_payload_filename: Option<String>, // Original filename for display
     publish_payload_expanded: bool, // Whether to show full payload preview
     publish_encoding: String,
@@ -481,23 +449,21 @@ struct ZenohExplorer {
     query_alert: Option<String>,
     messages_dropped: usize, // Counter for dropped messages
     rate_limiter: RateLimiter,
-    rate_limit_drops: usize,    // Messages dropped due to rate limiting
-    memory_warning_shown: bool, // Track if we've shown the memory warning
-    last_health_check: Instant, // Track worker health
-    worker_healthy: bool,       // Worker thread status
-    message_hashes: HashMap<u64, Instant>, // Deduplication: hash -> last seen time
+    rate_limit_drops: usize,    
+    memory_warning_shown: bool, 
+    last_health_check: Instant, 
+    worker_healthy: bool,       
+    message_hashes: HashMap<u64, Instant>,
     dedup_ttl: Duration,        // How long to remember message hashes
-    dedup_enabled: bool,        // Whether deduplication is enabled
-    messages_deduped: usize,    // Counter for deduplicated messages
+    dedup_enabled: bool,        
+    messages_deduped: usize,    
     #[allow(dead_code)] // Used in worker thread, not in main struct
-    local_kvstore: Arc<RwLock<HashMap<String, (String, String)>>>, // Shared key-value store for queryable: key -> (payload, encoding)
-    queryable_enabled: bool,    // Whether queryable is currently enabled
-    queryable_pattern: String,  // Key expression pattern for queryable
-    paused_keys: std::collections::HashSet<String>, // Keys that are paused (won't update in UI)
+    local_kvstore: Arc<RwLock<HashMap<String, (String, String)>>>, // Shared key-value store for queryable
+    queryable_enabled: bool,    
+    queryable_pattern: String, 
+    paused_keys: std::collections::HashSet<String>, // Keys that are paused won't update in UI
     json_parse_cache: std::collections::HashMap<u64, Option<String>>, // Cache for JSON parsing: payload_hash -> formatted JSON or None
-    expanded_payloads: std::collections::HashSet<String>, // Keys with expanded payloads (show full content)
-    /// Full payload storage: key -> (full_payload, timestamp) - kept separate from UI for performance
-    /// Export reads from here, UI shows truncated version from browse_tree
+    expanded_payloads: std::collections::HashSet<String>,
     payload_store: Arc<RwLock<HashMap<String, (Vec<u8>, chrono::DateTime<chrono::Utc>)>>>,
 }
 
@@ -511,8 +477,7 @@ impl ZenohExplorer {
     /// Creates a new instance of the Zenoh Explorer application.
     /// Sets up communication channels and spawns the Zenoh worker thread.
     fn new() -> Self {
-        // Create channels for tri-layer architecture:
-        // Worker -> Buffer Thread -> UI Thread
+        // Create channels for worker/buffer/ui
         let (command_sender, command_receiver) = mpsc::channel();
         let (worker_event_sender, buffer_receiver) = mpsc::channel(); // Worker to buffer
         let (ui_sender, event_receiver) = mpsc::channel(); // Buffer to UI
@@ -521,14 +486,12 @@ impl ZenohExplorer {
         let local_kvstore = Arc::new(RwLock::new(HashMap::new()));
         let kvstore_clone = local_kvstore.clone();
 
-        // Start message buffer thread (sits between worker and UI)
-        // Batches messages for efficient UI updates at 60fps
+        // Start message buffer thread
         std::thread::spawn(move || {
             message_buffer_thread(buffer_receiver, ui_sender);
         });
 
         // Start the Zenoh worker in a separate async task
-        // This handles all Zenoh operations without blocking the GUI
         std::thread::spawn(move || {
             let rt = tokio::runtime::Runtime::new().unwrap();
             rt.block_on(async {
@@ -541,9 +504,14 @@ impl ZenohExplorer {
         Self {
             detail_view: DetailView::TopicDetails,
             connection_status: ConnectionStatus::Disconnected,
+            discovered_peers: 0,
+            discovered_routers: 0,
             selected_topic: None,
-            locators: "tcp/localhost:7447".to_string(), // Default router endpoint
-            connection_mode: "client".to_string(),      // Default to client mode
+            connect_transport: "tcp".to_string(),       // Default transport protocol
+            connect_address: "localhost".to_string(),   // Default address
+            connect_port: "7447".to_string(),           // Default port
+            listen_port: "7447".to_string(),            // Default listen port for peer mode
+            connection_mode: "peer".to_string(),      // Default to peer mode
             config_json: "{}".to_string(),
             subscribe_key: "demo/**".to_string(),
             subscribe_reliability: "reliable".to_string(),
@@ -564,14 +532,14 @@ impl ZenohExplorer {
             tree_filter: String::new(),
             event_receiver: Some(event_receiver),
             dark_mode: true,
-            max_messages: 1000,
+            max_messages: 1000000,
             max_memory_mb: 100, // Default to 100MB limit
             current_memory_bytes: 0,
             message_filter: String::new(),
             auto_scroll: true,
             query_alert: None,
             messages_dropped: 0,
-            rate_limiter: RateLimiter::new(1000), // Default: 1000 messages/second
+            rate_limiter: RateLimiter::new(1000), 
             rate_limit_drops: 0,
             memory_warning_shown: false,
             last_health_check: Instant::now(),
@@ -600,12 +568,11 @@ impl ZenohExplorer {
 
     /// Returns the appropriate button style for the current theme
     fn apply_theme(&self, ctx: &egui::Context) {
-        // Enable smooth animations at 60fps
-        ctx.request_repaint_after(std::time::Duration::from_millis(16)); // ~60fps
+        // smooth animations
+        ctx.request_repaint_after(std::time::Duration::from_millis(1)); // ~60fps
 
         ctx.style_mut(|style| {
-            // Enable smooth animations
-            style.animation_time = 0.1; // 100ms smooth transitions
+            style.animation_time = 0.001; // smooth transitions
             if self.dark_mode {
                 // Dark mode styling
 
@@ -630,7 +597,7 @@ impl ZenohExplorer {
                 style.visuals.widgets.hovered.bg_stroke.color = ExplorerColors::DARK_PRIMARY;
                 style.visuals.widgets.active.bg_stroke.color = ExplorerColors::DARK_PRIMARY;
 
-                // Text colors for inputs - white text in dark backgrounds
+                // Text colors for inputs, white text in dark backgrounds
                 style.visuals.widgets.inactive.fg_stroke.color = ExplorerColors::DARK_TEXT_PRIMARY;
                 style.visuals.widgets.hovered.fg_stroke.color = ExplorerColors::DARK_TEXT_PRIMARY;
                 style.visuals.widgets.active.fg_stroke.color = ExplorerColors::DARK_TEXT_PRIMARY;
@@ -639,7 +606,7 @@ impl ZenohExplorer {
                 style.visuals.widgets.noninteractive.bg_fill = ExplorerColors::DARK_CARD_BACKGROUND;
                 style.visuals.widgets.noninteractive.fg_stroke.color = ExplorerColors::DARK_TEXT_PRIMARY;
 
-                // Code blocks - light text on dark background
+                // Code blocks, light text on dark background
                 style.visuals.code_bg_color = Color32::from_gray(30);
 
                 // Text selection
@@ -672,12 +639,12 @@ impl ZenohExplorer {
                 style.visuals.widgets.hovered.bg_stroke.color = ExplorerColors::PRIMARY;
                 style.visuals.widgets.active.bg_stroke.color = ExplorerColors::PRIMARY;
 
-                // Text colors for inputs - dark text on light backgrounds
+                // Text colors for inputs, dark text on light backgrounds
                 style.visuals.widgets.inactive.fg_stroke.color = ExplorerColors::TEXT_PRIMARY;
                 style.visuals.widgets.hovered.fg_stroke.color = ExplorerColors::TEXT_PRIMARY;
                 style.visuals.widgets.active.fg_stroke.color = ExplorerColors::TEXT_PRIMARY;
 
-                // Non-interactive elements (labels, static text)
+                // Non-interactive elements 
                 style.visuals.widgets.noninteractive.bg_fill = ExplorerColors::CARD_BACKGROUND;
                 style.visuals.widgets.noninteractive.fg_stroke.color = ExplorerColors::TEXT_PRIMARY;
 
@@ -729,12 +696,11 @@ impl ZenohExplorer {
 
     /// Create smooth fade animation for UI elements
     fn animate_fade_in(&self, ctx: &egui::Context, id: &str, target: f32) -> f32 {
-        ctx.animate_value_with_time(egui::Id::new(id), target, 0.1) // 100ms fade
+        ctx.animate_value_with_time(egui::Id::new(id), target, 0.001)
     }
 
-    /// Create pulsing animation for warning indicators (60fps)
+    /// Create pulsing animation for warning indicators 
     fn animate_pulse(&self, ctx: &egui::Context, _id: &str) -> f32 {
-        // Use sine wave for smooth pulsing: 0.7 to 1.0 range
         let time = ctx.input(|i| i.time) as f32;
         0.85 + (time * 3.0).sin() * 0.15 // Pulse between 0.7 and 1.0
     }
@@ -766,9 +732,6 @@ impl ZenohExplorer {
         hasher.finish()
     }
 
-    /// Compute hash for payload alone (for JSON cache)
-    /// OPTIMIZED: Only hashes first 4KB to avoid O(n) on large payloads
-    /// Uses bytes to safely handle binary data
     fn compute_payload_hash(payload: &str) -> u64 {
         let mut hasher = std::collections::hash_map::DefaultHasher::new();
         use std::hash::{Hash, Hasher};
@@ -783,10 +746,8 @@ impl ZenohExplorer {
     }
 
     /// Get formatted JSON from cache or parse and cache it
-    /// Returns Some(formatted_json) if payload is valid JSON, None otherwise
-    /// OPTIMIZED: Only parses when needed, truncates large JSON to 50KB for UI
     fn get_cached_json(&mut self, payload: &str) -> Option<String> {
-        // Skip JSON parsing for very large payloads - too expensive
+        // Skip JSON parsing for very large payloads
         if payload.len() > MAX_UI_DISPLAY_SIZE {
             return None; // Will fall back to raw text display
         }
@@ -817,7 +778,7 @@ impl ZenohExplorer {
             None
         };
 
-        // Clean cache if it gets too large (keep last 100 entries)
+        // keep last 100 entries
         if self.json_parse_cache.len() > 100 {
             self.json_parse_cache.clear();
         }
@@ -835,7 +796,7 @@ impl ZenohExplorer {
         let hash = Self::compute_message_hash(key, payload);
         let now = Instant::now();
 
-        // Clean old hashes periodically (every 100 checks)
+        // Clean old hashes periodically 
         if self.message_hashes.len() % 100 == 0 {
             self.message_hashes.retain(|_, &mut timestamp| {
                 now.duration_since(timestamp) < self.dedup_ttl
@@ -881,7 +842,13 @@ impl ZenohExplorer {
                 }
                 ZenohEvent::Disconnected => {
                     self.connection_status = ConnectionStatus::Disconnected;
+                    self.discovered_peers = 0;
+                    self.discovered_routers = 0;
                     self.subscriptions.clear();
+                }
+                ZenohEvent::DiscoveryUpdate { peers, routers } => {
+                    self.discovered_peers = peers;
+                    self.discovered_routers = routers;
                 }
                 ZenohEvent::ConnectionError(err) => {
                     self.connection_status = ConnectionStatus::Error(err);
@@ -897,7 +864,7 @@ impl ZenohExplorer {
                         if let Some(idx) = existing_idx {
                             // We have an existing reply for this key
                             if message.is_local && !self.messages[idx].is_local {
-                                // New message is local, old is remote - replace with local
+                                // New message is local, old is remote
                                 self.messages[idx] = message.clone();
                                 continue; // Already added, skip the rest
                             } else if !message.is_local && self.messages[idx].is_local {
@@ -908,7 +875,7 @@ impl ZenohExplorer {
                         }
                     }
 
-                    // Apply deduplication check (but not for query replies - we want to see those every time)
+                    // Apply deduplication check (but not for query replies, we want to see those every time)
                     if message.message_type != MessageType::QueryReply && self.is_duplicate(&message.key, &message.payload) {
                         self.messages_deduped += 1;
                         continue; // Skip duplicate
@@ -1080,7 +1047,8 @@ impl ZenohExplorer {
 
         // Store full payload bytes for export
         if payload_len <= MAX_EXPORT_PAYLOAD {
-            if let Ok(mut store) = self.payload_store.try_write() {
+            // Use blocking write() to ensure raw bytes are always stored
+            if let Ok(mut store) = self.payload_store.write() {
                 if store.len() >= 500 {
                     if let Some(key) = store.keys().next().cloned() {
                         store.remove(&key);
@@ -1088,6 +1056,8 @@ impl ZenohExplorer {
                 }
                 // Store raw bytes for export
                 store.insert(message.key.clone(), (raw_bytes, message.timestamp));
+            } else {
+                error!("Failed to acquire payload_store lock for key: {}", message.key);
             }
         }
 
@@ -1134,11 +1104,8 @@ impl ZenohExplorer {
     }
 }
 
-// Removed truncate_payload - now done inline in update_browse_tree for tree only
+/// Message buffer thread that batches messages for ui
 
-/// Message buffer thread that batches messages for efficient UI updates.
-/// This thread sits between the worker thread and UI thread to prevent flooding.
-///
 /// # Arguments
 /// * `buffer_receiver` - Channel to receive individual messages from worker
 /// * `ui_sender` - Channel to send batched messages to UI thread
@@ -1236,21 +1203,67 @@ async fn zenoh_worker(
                 match command {
                     ZenohCommand::Connect {
                         locators,
+                        listen_port,
                         mode,
                         config_json,
                     } => {
                         info!(
-                            "Worker processing connect command - mode: {}, locators: {}",
-                            mode, locators
+                            "Worker processing connect command - mode: {}, locators: {}, listen_port: {}",
+                            mode, locators, listen_port
                         );
-                        match connect_zenoh(&locators, &mode, &config_json).await {
+                        match connect_zenoh(&locators, &listen_port, &mode, &config_json).await {
                             Ok(new_session) => {
                                 info!("Worker successfully created session");
-                                session = Some(Arc::new(new_session));
+                                let session_arc = Arc::new(new_session);
+                                session = Some(session_arc.clone());
+
+                                // Send Connected event
                                 match event_sender.send(ZenohEvent::Connected) {
                                     Ok(_) => info!("Successfully sent Connected event to GUI"),
                                     Err(e) => error!("Failed to send Connected event: {:?}", e),
                                 }
+
+                                // Spawn a separate discovery thread to monitor peers/routers
+                                let discovery_session = session_arc.clone();
+                                let discovery_sender = event_sender.clone();
+                                std::thread::spawn(move || {
+                                    // Zenoh requires multi-thread runtime
+                                    let rt = tokio::runtime::Builder::new_multi_thread()
+                                        .worker_threads(1)
+                                        .enable_all()
+                                        .build()
+                                        .unwrap();
+
+                                    rt.block_on(async {
+                                        loop {
+                                            // Count peers
+                                            let mut peers_count = 0;
+                                            let mut peers_iter = discovery_session.info().peers_zid().await;
+                                            while peers_iter.next().is_some() {
+                                                peers_count += 1;
+                                            }
+
+                                            // Count routers
+                                            let mut routers_count = 0;
+                                            let mut routers_iter = discovery_session.info().routers_zid().await;
+                                            while routers_iter.next().is_some() {
+                                                routers_count += 1;
+                                            }
+
+                                            // Send update to UI
+                                            if discovery_sender.send(ZenohEvent::DiscoveryUpdate {
+                                                peers: peers_count,
+                                                routers: routers_count,
+                                            }).is_err() {
+                                                // Channel closed, exit thread
+                                                break;
+                                            }
+
+                                            // Poll every 2 seconds
+                                            tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+                                        }
+                                    });
+                                });
                             }
                             Err(e) => {
                                 error!("Worker failed to connect: {}", e);
@@ -1315,6 +1328,7 @@ async fn zenoh_worker(
                                                 result = subscriber.recv_async() => {
                                                     match result {
                                                         Ok(sample) => {
+                                                            info!("Subscriber received sample on key: {}", sample.key_expr());
                                                             // Get raw bytes for export
                                                             let raw_bytes: Vec<u8> = sample.payload().to_bytes().to_vec();
 
@@ -1344,10 +1358,14 @@ async fn zenoh_worker(
                                                                 false,  // Subscription messages are always from remote
                                                             );
 
-                                                            let _ = event_sender_clone
-                                                                .send(ZenohEvent::MessageReceived(message));
+                                                            match event_sender_clone
+                                                                .send(ZenohEvent::MessageReceived(message)) {
+                                                                Ok(_) => info!("Sent MessageReceived event to GUI"),
+                                                                Err(e) => error!("Failed to send MessageReceived: {:?}", e),
+                                                            }
                                                         }
-                                                        Err(_) => {
+                                                        Err(e) => {
+                                                            error!("Subscriber recv error: {:?}", e);
                                                             // Subscriber closed or error, exit loop
                                                             break;
                                                         }
@@ -1750,17 +1768,19 @@ async fn zenoh_worker(
 /// A Zenoh session on success, or an error if connection fails
 async fn connect_zenoh(
     locators: &str,
+    listen_port: &str,
     mode: &str,
     config_json: &str,
 ) -> Result<Session, Box<dyn std::error::Error + Send + Sync>> {
     info!(
-        "Attempting to connect - mode: {}, locators: {}",
+        "Attempting to connect - mode: {}, locators: {}, listen_port: {}",
         mode,
         if locators.is_empty() {
             "(none - using discovery)"
         } else {
             locators
-        }
+        },
+        listen_port
     );
 
     let mut config = zenoh::config::Config::default();
@@ -1776,8 +1796,22 @@ async fn connect_zenoh(
         .unwrap();
     info!("Set max_message_size to {} bytes (100GB)", max_message_size);
 
-    // Set batch size to maximum (default on macOS is only 9216, max is 65535)
-    config.transport.link.tx.set_batch_size(65535).unwrap();
+    // Extract protocol from first locator for listen endpoint
+    let first_locator = locators.split(',').next().unwrap_or("").trim();
+    let protocol = first_locator.split('/').next().unwrap_or("tcp");
+    let is_udp_based = protocol == "udp" || protocol == "quic";
+
+    // Set batch size based on protocol
+    // UDP: Use MTU-safe size (1472 = 1500 - 20 IP - 8 UDP headers) to avoid IP fragmentation
+    // TCP: Use maximum (65535) since TCP handles segmentation reliably
+    let batch_size: u16 = if is_udp_based { 1472 } else { 65535 };
+    config.transport.link.tx.set_batch_size(batch_size).unwrap();
+
+    // Increase RX buffer size for handling high-throughput (default is 65535)
+    // Set to 16MB to handle large fragmented messages over UDP
+    config.transport.link.rx.set_buffer_size(16 * 1024 * 1024).unwrap();
+
+    info!("Set batch_size to {} bytes, rx_buffer to 16MB (protocol: {})", batch_size, protocol);
 
     // Increase queue sizes to handle large payload bursts (default is 2, max is 16)
     // This allows more batches to be queued before back-pressure kicks in
@@ -1799,7 +1833,7 @@ async fn connect_zenoh(
         .block
         .set_wait_before_close(300_000_000)
         .unwrap();
-    info!("Set batch_size to 65535, queue sizes to 16, batching disabled, wait_before_close to 300 seconds");
+    info!("Set queue sizes to 16, batching disabled, wait_before_close to 300 seconds");
 
     // Parse and apply any additional configuration provided as JSON
     if !config_json.is_empty() && config_json != "{}" {
@@ -1835,17 +1869,19 @@ async fn connect_zenoh(
         // Enable local routing
         // Note: routing.peer.mode is private in zenoh 1.0, skip this configuration
 
-        // Add listening endpoints for peer mode if no endpoints specified
-        if locators.is_empty() {
-            info!("Peer mode - adding default listening endpoints");
-            config
-                .listen
-                .endpoints
-                .set(vec![
-                    "tcp/[::]:0".parse().unwrap(), // Listen on any available port
-                ])
-                .unwrap();
-        }
+        // Add listening endpoints for peer mode
+        // Use the user-specified listen_port to avoid CONNECTION_TO_SELF errors
+        // Each peer on the same machine should use a different listen port
+        // Use [::] for IPv6 (default) - works for localhost and most networks
+        // Note: so_sndbuf/so_rcvbuf options only work for TCP/TLS, not UDP
+        let port = listen_port.parse::<u16>().unwrap_or(7447);
+        let listen_endpoint = format!("{}/[::]:{}", protocol, port);
+        info!("Peer mode - listening on {}", listen_endpoint);
+        config
+            .listen
+            .endpoints
+            .set(vec![listen_endpoint.parse().unwrap()])
+            .unwrap();
     } else {
         info!("Setting client mode");
         config.set_mode(Some(WhatAmI::Client)).unwrap();
@@ -1858,9 +1894,12 @@ async fn connect_zenoh(
     // Supports multiple endpoints separated by commas
     if !locators.is_empty() {
         debug!("Parsing locators: {}", locators);
+
+        // Parse endpoints - socket buffer options (so_sndbuf/so_rcvbuf) only work for TCP/TLS
         let endpoints: Vec<_> = locators
             .split(',')
-            .map(|s| s.trim().parse())
+            .map(|s| s.trim().to_string())
+            .map(|s| s.parse())
             .collect::<Result<Vec<_>, _>>()?;
 
         // Apply the endpoints to the configuration
@@ -1988,6 +2027,24 @@ impl eframe::App for ZenohExplorer {
                                 .color(self.connection_status.color()),
                         );
 
+                        // Show discovered peers/routers when connected
+                        if matches!(self.connection_status, ConnectionStatus::Connected) {
+                            if self.discovered_peers > 0 || self.discovered_routers > 0 {
+                                let mut parts = Vec::new();
+                                if self.discovered_routers > 0 {
+                                    parts.push(format!("{}R", self.discovered_routers));
+                                }
+                                if self.discovered_peers > 0 {
+                                    parts.push(format!("{}P", self.discovered_peers));
+                                }
+                                ui.label(
+                                    RichText::new(format!("({})", parts.join(" ")))
+                                        .color(self.text_tertiary_color())
+                                        .size(TEXT_SMALL_SIZE),
+                                );
+                            }
+                        }
+
                         // Memory usage indicator
                         if !self.messages.is_empty() || self.messages_dropped > 0 {
                             ui.separator();
@@ -2043,15 +2100,35 @@ impl eframe::App for ZenohExplorer {
                     ui.group(|ui| {
                         ui.label("Connection Settings");
                         ui.horizontal(|ui| {
-                            ui.label("Locators:");
-                            ui.text_edit_singleline(&mut self.locators);
-                            // Inline supported locators hint
-                            ui.label(RichText::new("(tcp/ udp/ quic/ ws/)").code().size(TEXT_SMALL_SIZE-2.0).color(self.text_tertiary_color()));
+                            // Transport dropdown
+                            ui.label("Transport:");
+                            egui::ComboBox::from_id_salt("connect_transport")
+                                .width(60.0)
+                                .selected_text(&self.connect_transport)
+                                .show_ui(ui, |ui| {
+                                    ui.selectable_value(&mut self.connect_transport, "tcp".to_string(), "tcp");
+                                    ui.selectable_value(&mut self.connect_transport, "udp".to_string(), "udp");
+                                    ui.selectable_value(&mut self.connect_transport, "quic".to_string(), "quic");
+                                    ui.selectable_value(&mut self.connect_transport, "ws".to_string(), "ws");
+                                    ui.selectable_value(&mut self.connect_transport, "tls".to_string(), "tls");
+                                });
+
+                            // Address input
+                            ui.label("Address:");
+                            ui.add(egui::TextEdit::singleline(&mut self.connect_address).desired_width(120.0));
+
+                            // Port input
+                            ui.label("Port:");
+                            ui.add(egui::TextEdit::singleline(&mut self.connect_port).desired_width(50.0));
                         });
                         ui.horizontal(|ui| {
-                            if self.connection_mode == "peer" && self.locators.is_empty() {
-                                ui.label(RichText::new("Using multicast discovery").size(TEXT_SMALL_SIZE-1.0).italics().color(self.text_tertiary_color()));
-                            }
+                            // Show constructed locator for reference
+                            let locator_preview = if self.connect_address.is_empty() {
+                                "(multicast discovery)".to_string()
+                            } else {
+                                format!("{}/{}:{}", self.connect_transport, self.connect_address, self.connect_port)
+                            };
+                            ui.label(RichText::new(format!("→ {}", locator_preview)).size(TEXT_SMALL_SIZE-1.0).italics().color(self.text_tertiary_color()));
                         });
                         ui.horizontal(|ui| {
                             ui.label("Mode:");
@@ -2071,9 +2148,18 @@ impl eframe::App for ZenohExplorer {
                                 });
                         });
 
+                        // Show listen port field in peer mode
+                        if self.connection_mode == "peer" {
+                            ui.horizontal(|ui| {
+                                ui.label("Listen Port:");
+                                ui.add(egui::TextEdit::singleline(&mut self.listen_port).desired_width(60.0));
+                                ui.label(RichText::new("(must differ from connect port on same machine)").size(TEXT_SMALL_SIZE-2.0).color(self.text_tertiary_color()));
+                            });
+                        }
+
                         // Show helpful tips based on mode
                         if self.connection_mode == "peer" {
-                            ui.label(RichText::new("💡 Peer mode: Leave locators empty for multicast discovery, or specify endpoints").size(TEXT_SMALL_SIZE).color(self.text_secondary_color()));
+                            ui.label(RichText::new("💡 Peer mode: Use different listen ports for each peer on same machine (e.g., 7447 and 7448)").size(TEXT_SMALL_SIZE).color(self.text_secondary_color()));
                         } else {
                             ui.label(RichText::new("💡 Client mode: Connects to Zenoh router. Default: tcp/localhost:7447").size(TEXT_SMALL_SIZE).color(self.text_secondary_color()));
                         }
@@ -2087,16 +2173,18 @@ impl eframe::App for ZenohExplorer {
                             if let Some(sender) = &self.command_sender {
                                 self.connection_status = ConnectionStatus::Connecting;
 
-                                // Use default locator for client mode if empty
-                                let locators = if self.connection_mode == "client" && self.locators.is_empty() {
-                                    "tcp/localhost:7447".to_string()
+                                // Construct locator from transport/address/port
+                                // Empty address means use multicast discovery (peer mode)
+                                let locators = if self.connect_address.is_empty() {
+                                    String::new()
                                 } else {
-                                    self.locators.clone()
+                                    format!("{}/{}:{}", self.connect_transport, self.connect_address, self.connect_port)
                                 };
 
-                                info!("GUI sending Connect command - mode: {}, locators: {}", self.connection_mode, locators);
+                                info!("GUI sending Connect command - mode: {}, locators: {}, listen_port: {}", self.connection_mode, locators, self.listen_port);
                                 match sender.send(ZenohCommand::Connect {
                                     locators,
+                                    listen_port: self.listen_port.clone(),
                                     mode: self.connection_mode.clone(),
                                     config_json: self.config_json.clone(),
                                 }) {
