@@ -158,6 +158,8 @@ pub struct ZenohMessage {
     pub is_local: bool,
     /// Raw payload bytes for export (None = use payload string as UTF-8)
     pub payload_bytes: Option<Vec<u8>>,
+    /// Identifies which session this message came from (publishing, monitor, or local echo)
+    pub source: MessageSource,
 }
 
 impl ZenohMessage {
@@ -169,6 +171,7 @@ impl ZenohMessage {
             + self.payload_bytes.as_ref().map_or(0, |v| v.capacity())
             + std::mem::size_of::<DateTime<Utc>>()
             + std::mem::size_of::<MessageType>()
+            + std::mem::size_of::<MessageSource>()
             + std::mem::size_of::<usize>() // for size_bytes field
             + std::mem::size_of::<Self>() // struct size
             + 24 // Approximate heap allocation overhead per string (3 strings * 8 bytes)
@@ -183,6 +186,7 @@ impl ZenohMessage {
         timestamp: DateTime<Utc>,
         message_type: MessageType,
         is_local: bool,
+        source: MessageSource,
     ) -> Self {
         let mut msg = Self {
             key,
@@ -193,6 +197,7 @@ impl ZenohMessage {
             size_bytes: 0,
             is_local,
             payload_bytes: Some(payload_bytes),
+            source,
         };
         msg.size_bytes = msg.calculate_size();
         msg
@@ -261,6 +266,10 @@ pub enum ZenohEvent {
     },
     /// Health check pong response
     Pong,
+    /// Publishing session connected (first phase of dual-session connection)
+    PublishingConnected,
+    /// Monitor session connected (second phase of dual-session connection)
+    MonitorConnected,
 }
 
 /// Types of messages that can flow through the Zenoh network.
@@ -296,6 +305,18 @@ impl MessageType {
     }
 }
 
+/// Identifies the source of a message for dual-session architecture.
+/// This allows distinguishing between user-initiated operations and background monitoring.
+#[derive(Debug, Clone, PartialEq)]
+pub enum MessageSource {
+    /// Message from user's explicit subscriptions via the publishing session
+    PublishingSession,
+    /// Message from background ** subscription via the monitor session
+    MonitorSession,
+    /// Echo of a message published locally by this app instance
+    LocalEcho,
+}
+
 /// Metadata about an active subscription displayed in the UI.
 /// This is separate from ActiveSubscription which manages the async task.
 #[derive(Debug, Clone)]
@@ -316,10 +337,15 @@ enum DetailView {
 }
 
 /// Current status of the Zenoh connection.
+/// Supports dual-session architecture with separate states for publishing and monitor sessions.
 #[derive(PartialEq)]
 enum ConnectionStatus {
     Disconnected,
-    Connecting,
+    /// Initial connection phase - connecting the publishing session
+    ConnectingPublishing,
+    /// Second connection phase - connecting the monitor session
+    ConnectingMonitor,
+    /// Both sessions are connected and ready
     Connected,
     Error(String),
 }
@@ -328,7 +354,7 @@ impl ConnectionStatus {
     fn color(&self) -> Color32 {
         match self {
             ConnectionStatus::Connected => ExplorerColors::SUCCESS,
-            ConnectionStatus::Connecting => ExplorerColors::WARNING,
+            ConnectionStatus::ConnectingPublishing | ConnectionStatus::ConnectingMonitor => ExplorerColors::WARNING,
             ConnectionStatus::Disconnected | ConnectionStatus::Error(_) => ExplorerColors::ERROR,
         }
     }
@@ -336,7 +362,8 @@ impl ConnectionStatus {
     fn text(&self) -> &str {
         match self {
             ConnectionStatus::Connected => "Connected",
-            ConnectionStatus::Connecting => "Connecting...",
+            ConnectionStatus::ConnectingPublishing => "Connecting (publishing)...",
+            ConnectionStatus::ConnectingMonitor => "Connecting (monitor)...",
             ConnectionStatus::Disconnected => "Disconnected",
             ConnectionStatus::Error(_) => "Error",
         }
@@ -508,7 +535,7 @@ impl ZenohExplorer {
             discovered_routers: 0,
             selected_topic: None,
             connect_transport: "tcp".to_string(),       // Default transport protocol
-            connect_address: "localhost".to_string(),   // Default address
+            connect_address: "".to_string(),            // Empty for multicast discovery in peer mode
             connect_port: "7447".to_string(),           // Default port
             listen_port: "7447".to_string(),            // Default listen port for peer mode
             connection_mode: "peer".to_string(),      // Default to peer mode
@@ -837,7 +864,18 @@ impl ZenohExplorer {
         for event in events {
             match event {
                 ZenohEvent::Connected => {
-                    info!("GUI received Connected event");
+                    // Legacy event - treat as fully connected for backwards compatibility
+                    info!("GUI received Connected event (legacy)");
+                    self.connection_status = ConnectionStatus::Connected;
+                }
+                ZenohEvent::PublishingConnected => {
+                    // Publishing session connected, waiting for monitor session
+                    info!("GUI received PublishingConnected event");
+                    self.connection_status = ConnectionStatus::ConnectingMonitor;
+                }
+                ZenohEvent::MonitorConnected => {
+                    // Both sessions are now connected
+                    info!("GUI received MonitorConnected event - fully connected");
                     self.connection_status = ConnectionStatus::Connected;
                 }
                 ZenohEvent::Disconnected => {
@@ -1185,10 +1223,15 @@ async fn zenoh_worker(
 ) {
     info!("Zenoh worker thread started");
 
-    // Current Zenoh session (if connected)
-    let mut session: Option<Arc<Session>> = None;
-    // Map of active subscriptions by ID for management
+    // Dual session architecture:
+    // - publishing_session: handles user's explicit subscribe/publish/query operations
+    // - monitor_session: auto-subscribes to ** to observe actual wire traffic
+    let mut publishing_session: Option<Arc<Session>> = None;
+    let mut monitor_session: Option<Arc<Session>> = None;
+    // Map of active subscriptions by ID for management (user subscriptions on publishing session)
     let mut active_subscriptions: HashMap<String, ActiveSubscription> = HashMap::new();
+    // Monitor session's ** subscription (background traffic observation)
+    let mut monitor_subscription: Option<ActiveSubscription> = None;
     // Active queryable and its associated task
     let mut queryable_task: Option<(tokio::task::JoinHandle<()>, tokio::sync::mpsc::Sender<()>)> = None;
 
@@ -1211,16 +1254,18 @@ async fn zenoh_worker(
                             "Worker processing connect command - mode: {}, locators: {}, listen_port: {}",
                             mode, locators, listen_port
                         );
+
+                        // Phase 1: Connect the publishing session
                         match connect_zenoh(&locators, &listen_port, &mode, &config_json).await {
                             Ok(new_session) => {
-                                info!("Worker successfully created session");
+                                info!("Worker successfully created publishing session");
                                 let session_arc = Arc::new(new_session);
-                                session = Some(session_arc.clone());
+                                publishing_session = Some(session_arc.clone());
 
-                                // Send Connected event
-                                match event_sender.send(ZenohEvent::Connected) {
-                                    Ok(_) => info!("Successfully sent Connected event to GUI"),
-                                    Err(e) => error!("Failed to send Connected event: {:?}", e),
+                                // Send PublishingConnected event
+                                match event_sender.send(ZenohEvent::PublishingConnected) {
+                                    Ok(_) => info!("Successfully sent PublishingConnected event to GUI"),
+                                    Err(e) => error!("Failed to send PublishingConnected event: {:?}", e),
                                 }
 
                                 // Spawn a separate discovery thread to monitor peers/routers
@@ -1264,9 +1309,106 @@ async fn zenoh_worker(
                                         }
                                     });
                                 });
+
+                                // Phase 2: Connect the monitor session with scouting disabled
+                                // Use listen_port + 1000 to avoid port conflicts in peer mode
+                                let monitor_port = listen_port.parse::<u16>().unwrap_or(7447) + 1000;
+                                info!("Connecting monitor session on port {}", monitor_port);
+
+                                match connect_zenoh_monitor(&locators, &monitor_port.to_string(), &mode).await {
+                                    Ok(mon_session) => {
+                                        info!("Worker successfully created monitor session");
+                                        let mon_session_arc = Arc::new(mon_session);
+                                        monitor_session = Some(mon_session_arc.clone());
+
+                                        // Auto-subscribe monitor to ** (all topics)
+                                        match mon_session_arc.declare_subscriber("**").await {
+                                            Ok(subscriber) => {
+                                                info!("Monitor session subscribed to **");
+                                                let event_sender_clone = event_sender.clone();
+                                                let (cancel_sender, mut cancel_receiver) = oneshot::channel();
+
+                                                // Spawn task to handle monitor subscription messages
+                                                let task_handle = tokio::spawn(async move {
+                                                    loop {
+                                                        tokio::select! {
+                                                            _ = &mut cancel_receiver => {
+                                                                info!("Monitor subscription cancelled");
+                                                                break;
+                                                            }
+                                                            result = subscriber.recv_async() => {
+                                                                match result {
+                                                                    Ok(sample) => {
+                                                                        debug!("Monitor received sample on key: {}", sample.key_expr());
+                                                                        let raw_bytes: Vec<u8> = sample.payload().to_bytes().to_vec();
+
+                                                                        let payload_display =
+                                                                            match sample.payload().try_to_string() {
+                                                                                Ok(s) => s.into_owned(),
+                                                                                Err(_) => {
+                                                                                    let hex: Vec<String> = raw_bytes.iter().take(256).map(|b| format!("{:02x}", b)).collect();
+                                                                                    if raw_bytes.len() > 256 {
+                                                                                        format!("[binary {} bytes] {}...", raw_bytes.len(), hex.join(" "))
+                                                                                    } else {
+                                                                                        format!("[binary {} bytes] {}", raw_bytes.len(), hex.join(" "))
+                                                                                    }
+                                                                                }
+                                                                            };
+
+                                                                        let message = ZenohMessage::new_with_bytes(
+                                                                            sample.key_expr().to_string(),
+                                                                            payload_display,
+                                                                            raw_bytes,
+                                                                            "text/plain".to_string(),
+                                                                            Utc::now(),
+                                                                            MessageType::Subscribe,
+                                                                            false,  // Monitor messages are always from remote
+                                                                            MessageSource::MonitorSession,
+                                                                        );
+
+                                                                        let _ = event_sender_clone
+                                                                            .send(ZenohEvent::MessageReceived(message));
+                                                                    }
+                                                                    Err(e) => {
+                                                                        error!("Monitor subscriber recv error: {:?}", e);
+                                                                        break;
+                                                                    }
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                });
+
+                                                monitor_subscription = Some(ActiveSubscription {
+                                                    key_expr: "**".to_string(),
+                                                    task_handle,
+                                                    cancel_sender,
+                                                });
+                                            }
+                                            Err(e) => {
+                                                error!("Failed to subscribe monitor to **: {}", e);
+                                            }
+                                        }
+
+                                        // Send MonitorConnected event (both sessions now ready)
+                                        match event_sender.send(ZenohEvent::MonitorConnected) {
+                                            Ok(_) => info!("Successfully sent MonitorConnected event to GUI"),
+                                            Err(e) => error!("Failed to send MonitorConnected event: {:?}", e),
+                                        }
+                                    }
+                                    Err(e) => {
+                                        // Monitor session failed, but publishing session is still usable
+                                        error!("Failed to connect monitor session: {}", e);
+                                        // Still send Connected since publishing session works
+                                        match event_sender.send(ZenohEvent::MonitorConnected) {
+                                            Ok(_) => info!("Sent MonitorConnected event (monitor failed but publishing works)"),
+                                            Err(send_err) => error!("Failed to send MonitorConnected: {:?}", send_err),
+                                        }
+                                    }
+                                }
                             }
                             Err(e) => {
-                                error!("Worker failed to connect: {}", e);
+                                error!("Worker failed to connect publishing session: {}", e);
                                 match event_sender.send(ZenohEvent::ConnectionError(e.to_string()))
                                 {
                                     Ok(_) => info!("Sent ConnectionError event to GUI"),
@@ -1279,8 +1421,16 @@ async fn zenoh_worker(
                         }
                     }
                     ZenohCommand::Disconnect => {
-                        // Clean shutdown process:
-                        // 1. Cancel all active subscriptions gracefully
+                        // Clean shutdown process for dual-session architecture:
+
+                        // 1. Cancel monitor subscription first
+                        if let Some(sub) = monitor_subscription.take() {
+                            let _ = sub.cancel_sender.send(());
+                            sub.task_handle.abort();
+                            info!("Monitor subscription cancelled");
+                        }
+
+                        // 2. Cancel all active user subscriptions gracefully
                         for (_, subscription) in active_subscriptions.drain() {
                             // Send cancellation signal (ignore if already cancelled)
                             let _ = subscription.cancel_sender.send(());
@@ -1288,12 +1438,19 @@ async fn zenoh_worker(
                             subscription.task_handle.abort();
                         }
 
-                        // 2. Close the Zenoh session
-                        if let Some(s) = session.take() {
+                        // 3. Close the monitor session first (it depends on nothing)
+                        if let Some(s) = monitor_session.take() {
                             let _ = s.close().await;
+                            info!("Monitor session closed");
                         }
 
-                        // 3. Notify GUI of disconnection
+                        // 4. Close the publishing session
+                        if let Some(s) = publishing_session.take() {
+                            let _ = s.close().await;
+                            info!("Publishing session closed");
+                        }
+
+                        // 5. Notify GUI of disconnection
                         let _ = event_sender.send(ZenohEvent::Disconnected);
                     }
                     ZenohCommand::Subscribe {
@@ -1301,7 +1458,7 @@ async fn zenoh_worker(
                         reliability: _, // TODO: Implement reliability configuration
                         mode: _,        // TODO: Implement mode configuration
                     } => {
-                        if let Some(ref sess) = session {
+                        if let Some(ref sess) = publishing_session {
                             match sess.declare_subscriber(&key_expr).await {
                                 Ok(subscriber) => {
                                     // Generate unique subscription ID
@@ -1356,6 +1513,7 @@ async fn zenoh_worker(
                                                                 Utc::now(),
                                                                 MessageType::Subscribe,
                                                                 false,  // Subscription messages are always from remote
+                                                                MessageSource::PublishingSession,
                                                             );
 
                                                             match event_sender_clone
@@ -1401,7 +1559,7 @@ async fn zenoh_worker(
                         payload,
                         encoding,
                     } => {
-                        if let Some(ref sess) = session {
+                        if let Some(ref sess) = publishing_session {
                             // Generate display string - only preview, never clone full payload
                             let payload_str = {
                                 let preview_len = payload.len().min(256);
@@ -1477,9 +1635,7 @@ async fn zenoh_worker(
                                 if all_ok {
                                     info!("Successfully published all {} chunks for {}", total_chunks, key);
                                 }
-                                // Don't echo - chunked payloads are not displayed directly
-                            } else if payload_len > 100 * 1024 * 1024 {
-                                // Medium-large payload (100MB-256MB) - send directly but don't echo
+                            } else if payload_len > 100 * 1024 * 1024 { // 100MB threshold for no-echo
                                 match sess
                                     .put(&key, payload)  // Move directly, no clone
                                     .encoding(&encoding as &str)
@@ -1510,6 +1666,7 @@ async fn zenoh_worker(
                                     Utc::now(),
                                     MessageType::Publish,
                                     true,  // Published from this app, so it's local
+                                    MessageSource::LocalEcho,
                                 );
 
                                 let _ = event_sender.send(ZenohEvent::MessageReceived(message));
@@ -1521,7 +1678,7 @@ async fn zenoh_worker(
                         value,
                         timeout_ms,
                     } => {
-                        if let Some(ref sess) = session {
+                        if let Some(ref sess) = publishing_session {
                             info!("Sending query for selector: {}", selector);
                             let mut get_builder = sess.get(&selector);
 
@@ -1586,6 +1743,7 @@ async fn zenoh_worker(
                                                     Utc::now(),
                                                     MessageType::QueryReply,
                                                     is_local,
+                                                    MessageSource::PublishingSession,
                                                 );
 
                                                 let _ = event_sender_query
@@ -1626,7 +1784,7 @@ async fn zenoh_worker(
                         }
                     }
                     ZenohCommand::EnableQueryable { key_expr } => {
-                        if let Some(ref sess) = session {
+                        if let Some(ref sess) = publishing_session {
                             // Cancel existing queryable if any
                             if let Some((handle, cancel_tx)) = queryable_task.take() {
                                 let _ = cancel_tx.send(()).await;
@@ -1797,8 +1955,13 @@ async fn connect_zenoh(
     info!("Set max_message_size to {} bytes (100GB)", max_message_size);
 
     // Extract protocol from first locator for listen endpoint
+    // Default to "tcp" if locators is empty (multicast discovery mode)
     let first_locator = locators.split(',').next().unwrap_or("").trim();
-    let protocol = first_locator.split('/').next().unwrap_or("tcp");
+    let protocol = if first_locator.is_empty() {
+        "tcp"
+    } else {
+        first_locator.split('/').next().unwrap_or("tcp")
+    };
     let is_udp_based = protocol == "udp" || protocol == "quic";
 
     // Set batch size based on protocol
@@ -1819,7 +1982,7 @@ async fn connect_zenoh(
     config.transport.link.tx.queue.size.set_data_high(16).unwrap();
     config.transport.link.tx.queue.size.set_data_low(16).unwrap();
 
-    // Disable batching delay - send immediately without waiting to batch
+    // Send immediately without waiting to batch
     config.transport.link.tx.queue.batching.set_enabled(false).unwrap();
 
     // Increase wait_before_close timeout for Block congestion control (default: 5 seconds)
@@ -1847,14 +2010,11 @@ async fn connect_zenoh(
     }
 
     // Configure the connection mode
-    // Client: connects to existing routers
-    // Peer: participates as a peer in the mesh network
     if mode == "peer" {
         info!("Setting peer mode");
         config.set_mode(Some(WhatAmI::Peer)).unwrap();
 
-        // For peer mode, we need to enable scouting
-        // This allows peers to discover each other via multicast
+        // Enable scouting to allow peers for discovery via multicast
         info!("Peer mode - configuring scouting");
         config.scouting.multicast.set_enabled(Some(true)).unwrap();
         config.scouting.gossip.set_enabled(Some(true)).unwrap();
@@ -1870,13 +2030,12 @@ async fn connect_zenoh(
         // Note: routing.peer.mode is private in zenoh 1.0, skip this configuration
 
         // Add listening endpoints for peer mode
-        // Use the user-specified listen_port to avoid CONNECTION_TO_SELF errors
         // Each peer on the same machine should use a different listen port
-        // Use [::] for IPv6 (default) - works for localhost and most networks
-        // Note: so_sndbuf/so_rcvbuf options only work for TCP/TLS, not UDP
+        // Use [::] for IPv6 (default)
+        // so_sndbuf/so_rcvbuf options only work for TCP/TLS, not UDP
         let port = listen_port.parse::<u16>().unwrap_or(7447);
         let listen_endpoint = format!("{}/[::]:{}", protocol, port);
-        info!("Peer mode - listening on {}", listen_endpoint);
+        info!("Peer mode, listening on {}", listen_endpoint);
         config
             .listen
             .endpoints
@@ -1885,8 +2044,6 @@ async fn connect_zenoh(
     } else {
         info!("Setting client mode");
         config.set_mode(Some(WhatAmI::Client)).unwrap();
-
-        // For client mode, disable scouting to speed up connection
         config.scouting.multicast.set_enabled(Some(false)).unwrap();
     }
 
@@ -1906,7 +2063,7 @@ async fn connect_zenoh(
         config.connect.endpoints.set(endpoints.clone()).unwrap();
         info!("Set {} endpoints", endpoints.len());
     } else {
-        info!("No locators specified - relying on multicast discovery");
+        info!("No locators, using only multicast discovery");
     }
 
     // Open the Zenoh session with the configured settings
@@ -1953,6 +2110,115 @@ async fn connect_zenoh(
                 mode
             )
             .into())
+        }
+    }
+}
+
+/// Connect a monitor session for observing all network traffic.
+/// This session has scouting disabled to prevent interference with the publishing session
+/// and uses a different port to avoid CONNECTION_TO_SELF errors.
+///
+/// # Arguments
+/// * `locators` - Connection endpoints (same as publishing session)
+/// * `monitor_port` - Port to listen on (typically listen_port + 1000)
+/// * `mode` - Connection mode (peer or client)
+async fn connect_zenoh_monitor(
+    locators: &str,
+    monitor_port: &str,
+    mode: &str,
+) -> Result<Session, Box<dyn std::error::Error + Send + Sync>> {
+    info!(
+        "Attempting to connect monitor session - mode: {}, locators: {}, monitor_port: {}",
+        mode,
+        if locators.is_empty() {
+            "(none - using discovery)"
+        } else {
+            locators
+        },
+        monitor_port
+    );
+
+    let mut config = zenoh::config::Config::default();
+
+    // Set max_message_size to 100GB to allow very large payloads
+    let max_message_size: usize = 100 * 1024 * 1024 * 1024;
+    config
+        .transport
+        .link
+        .rx
+        .set_max_message_size(max_message_size)
+        .unwrap();
+
+    // Extract protocol from first locator for listen endpoint
+    // Default to "tcp" if locators is empty (multicast discovery mode)
+    let first_locator = locators.split(',').next().unwrap_or("").trim();
+    let protocol = if first_locator.is_empty() {
+        "tcp"
+    } else {
+        first_locator.split('/').next().unwrap_or("tcp")
+    };
+    let is_udp_based = protocol == "udp" || protocol == "quic";
+
+    // Set batch size based on protocol
+    let batch_size: u16 = if is_udp_based { 1472 } else { 65535 };
+    config.transport.link.tx.set_batch_size(batch_size).unwrap();
+    config.transport.link.rx.set_buffer_size(16 * 1024 * 1024).unwrap();
+
+    // Configure the connection mode
+    if mode == "peer" {
+        info!("Monitor session: Setting peer mode with scouting DISABLED");
+        config.set_mode(Some(WhatAmI::Peer)).unwrap();
+
+        // CRITICAL: Disable scouting on monitor session to prevent interference
+        // This prevents the monitor from participating in peer discovery
+        // which could cause CONNECTION_TO_SELF errors
+        config.scouting.multicast.set_enabled(Some(false)).unwrap();
+        config.scouting.gossip.set_enabled(Some(false)).unwrap();
+
+        // Add listening endpoint with different port
+        let port = monitor_port.parse::<u16>().unwrap_or(8447);
+        let listen_endpoint = format!("{}/[::]:{}", protocol, port);
+        info!("Monitor session: listening on {}", listen_endpoint);
+        config
+            .listen
+            .endpoints
+            .set(vec![listen_endpoint.parse().unwrap()])
+            .unwrap();
+    } else {
+        info!("Monitor session: Setting client mode");
+        config.set_mode(Some(WhatAmI::Client)).unwrap();
+        config.scouting.multicast.set_enabled(Some(false)).unwrap();
+    }
+
+    // Parse the locator strings into endpoints (connect to same endpoints as publishing session)
+    if !locators.is_empty() {
+        let endpoints: Vec<_> = locators
+            .split(',')
+            .map(|s| s.trim().to_string())
+            .map(|s| s.parse())
+            .collect::<Result<Vec<_>, _>>()?;
+
+        config.connect.endpoints.set(endpoints.clone()).unwrap();
+        info!("Monitor session: Set {} connect endpoints", endpoints.len());
+    }
+
+    // Open the monitor session with a shorter timeout
+    info!("Opening monitor Zenoh session...");
+
+    match tokio::time::timeout(std::time::Duration::from_secs(15), zenoh::open(config)).await {
+        Ok(Ok(session)) => {
+            info!("Successfully connected monitor session in {} mode", mode);
+            // Brief stabilization delay
+            tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+            Ok(session)
+        }
+        Ok(Err(e)) => {
+            error!("Monitor session failed to connect: {}", e);
+            Err(format!("Monitor connection failed: {}", e).into())
+        }
+        Err(_) => {
+            error!("Monitor session connection timeout");
+            Err("Monitor connection timeout after 15 seconds".into())
         }
     }
 }
@@ -2019,7 +2285,7 @@ impl eframe::App for ZenohExplorer {
                         }
 
                         // Connection status with loading indicator
-                        if self.connection_status == ConnectionStatus::Connecting {
+                        if matches!(self.connection_status, ConnectionStatus::ConnectingPublishing | ConnectionStatus::ConnectingMonitor) {
                             ui.spinner();  // Show loading spinner
                         }
                         ui.label(
@@ -2153,7 +2419,6 @@ impl eframe::App for ZenohExplorer {
                             ui.horizontal(|ui| {
                                 ui.label("Listen Port:");
                                 ui.add(egui::TextEdit::singleline(&mut self.listen_port).desired_width(60.0));
-                                ui.label(RichText::new("(must differ from connect port on same machine)").size(TEXT_SMALL_SIZE-2.0).color(self.text_tertiary_color()));
                             });
                         }
 
@@ -2171,7 +2436,7 @@ impl eframe::App for ZenohExplorer {
 
                         if ui.button("Connect").clicked() {
                             if let Some(sender) = &self.command_sender {
-                                self.connection_status = ConnectionStatus::Connecting;
+                                self.connection_status = ConnectionStatus::ConnectingPublishing;
 
                                 // Construct locator from transport/address/port
                                 // Empty address means use multicast discovery (peer mode)
@@ -2209,7 +2474,7 @@ impl eframe::App for ZenohExplorer {
 
                 ui.separator();
 
-                // Main split-panel layout (MQTT Explorer style)
+                // Main split-panel layout 
                 egui::TopBottomPanel::top("toolbar").show_inside(ui, |ui| {
                     ui.horizontal(|ui| {
                         ui.label("Quick Actions:");
@@ -2243,8 +2508,7 @@ impl eframe::App for ZenohExplorer {
                 });
             });
 
-        // Request continuous repaint for real-time message updates
-        // This ensures the UI stays responsive to incoming messages
+        // repaint for real-time message updates
         ctx.request_repaint();
     }
 }
@@ -2273,7 +2537,7 @@ impl ZenohExplorer {
             ui.separator();
 
             // Subscription controls
-            ui.collapsing("➕ Subscribe to Topics", |ui| {
+            ui.collapsing("Subscribe to Topics", |ui| {
                 ui.horizontal(|ui| {
                     ui.label("Key:");
                     ui.text_edit_singleline(&mut self.subscribe_key);
@@ -2382,7 +2646,7 @@ impl ZenohExplorer {
                 // Export button with subtle styling
                 // NOTE: Exports FULL payload from payload_store (not truncated tree/UI version)
                 // For chunked payloads, reassembles chunks from topic/__chunk/...
-                if ui.button("💾 Export Payload").on_hover_text("Save full payload to file (original size)").clicked() {
+                if ui.button("Export Payload").on_hover_text("Save full payload to file (original size)").clicked() {
                     // Read from payload_store for FULL original payload
                     if let Ok(store) = self.payload_store.read() {
                         // First try direct lookup
@@ -2887,7 +3151,7 @@ impl ZenohExplorer {
             // Payload section with file import
             ui.horizontal(|ui| {
                 ui.label("Payload:");
-                if ui.button("📁 Import File").clicked() {
+                if ui.button("Import File").clicked() {
                     if let Some(path) = rfd::FileDialog::new().pick_file() {
                         match std::fs::read(&path) {
                             Ok(bytes) => {
@@ -2951,7 +3215,7 @@ impl ZenohExplorer {
                 let mut should_regenerate = false;
 
                 ui.horizontal(|ui| {
-                    ui.label(RichText::new(format!("📄 {}", filename)).color(self.text_secondary_color()));
+                    ui.label(RichText::new(format!("{}", filename)).color(self.text_secondary_color()));
                     if let Some(len) = bytes_len {
                         ui.label(RichText::new(format!("({} bytes)", len)).color(self.text_tertiary_color()));
 
@@ -3078,7 +3342,7 @@ impl ZenohExplorer {
                 // Show status
                 if self.queryable_enabled {
                     ui.label(
-                        RichText::new("● Active")
+                        RichText::new("Active")
                             .color(if self.dark_mode {
                                 ExplorerColors::DARK_SUCCESS
                             } else {
@@ -3088,7 +3352,7 @@ impl ZenohExplorer {
                     );
                 } else {
                     ui.label(
-                        RichText::new("○ Inactive")
+                        RichText::new("Inactive")
                             .color(self.text_tertiary_color())
                             .size(TEXT_SMALL_SIZE),
                     );
@@ -3109,7 +3373,7 @@ impl ZenohExplorer {
             });
 
             ui.label(
-                RichText::new("💡 When enabled, this app will respond to queries for keys you've published")
+                RichText::new("When enabled, this app will respond to queries for keys you've published")
                     .size(TEXT_SMALL_SIZE)
                     .color(self.text_tertiary_color())
                     .italics(),
@@ -3132,7 +3396,7 @@ impl ZenohExplorer {
         // Explain query functionality
         ui.label(
             RichText::new(
-                "ℹ Note: Queries require queryables (services) running on the network to respond.",
+                "Note: Queries require queryables (services) running on the network to respond.",
             )
             .color(self.text_secondary_color())
             .size(TEXT_SMALL_SIZE),
@@ -3148,7 +3412,7 @@ impl ZenohExplorer {
         if self.query_alert.is_some() {
             let mut dismiss = false;
             ui.group(|ui| {
-                ui.colored_label(ExplorerColors::WARNING, "⚠ Query Alert");
+                ui.colored_label(ExplorerColors::WARNING, "Query Alert");
                 if let Some(alert) = &self.query_alert {
                     ui.label(alert);
                 }
