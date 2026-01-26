@@ -226,6 +226,7 @@ pub enum ZenohCommand {
         key: String,
         payload: Vec<u8>, // Raw bytes
         encoding: String,
+        from_import: bool, // If true, don't store payload after publish (imported files are ephemeral)
     },
     Query {
         selector: String,
@@ -457,6 +458,7 @@ struct ZenohExplorer {
     publish_payload_bytes: Option<Vec<u8>>, // Raw bytes from file import, none uses publish_payload as text
     publish_payload_filename: Option<String>, // Original filename for display
     publish_payload_expanded: bool, // Whether to show full payload preview
+    import_memory_bytes: usize, // Track imported file memory for display (not included in current_memory_bytes)
     publish_encoding: String,
     query_selector: String,
     query_value: String,
@@ -548,6 +550,7 @@ impl ZenohExplorer {
             publish_payload_bytes: None,
             publish_payload_filename: None,
             publish_payload_expanded: false,
+            import_memory_bytes: 0,
             publish_encoding: "text/plain".to_string(),
             query_selector: "demo/**".to_string(),
             query_value: "".to_string(),
@@ -1558,6 +1561,7 @@ async fn zenoh_worker(
                         key,
                         payload,
                         encoding,
+                        from_import,
                     } => {
                         if let Some(ref sess) = publishing_session {
                             // Generate display string - only preview, never clone full payload
@@ -1579,7 +1583,8 @@ async fn zenoh_worker(
                             };
 
                             // Store in local kvstore for queryable responses (only store small payloads)
-                            if payload.len() <= 10 * 1024 * 1024 { // 10MB limit for kvstore
+                            // Skip storage for imported files - they are ephemeral and shouldn't persist in memory
+                            if !from_import && payload.len() <= 10 * 1024 * 1024 { // 10MB limit for kvstore
                                 if let Ok(mut store) = local_kvstore.write() {
                                     store.insert(key.clone(), (payload_str.clone(), encoding.clone()));
                                 }
@@ -1646,6 +1651,18 @@ async fn zenoh_worker(
                                     Err(e) => error!("Failed to publish to {}: {}", key, e),
                                 }
                                 // Don't echo - too large. Subscription will receive it.
+                            } else if from_import {
+                                // Imported file - publish but don't store/echo to free memory immediately
+                                match sess
+                                    .put(&key, payload)  // Move directly, no clone needed
+                                    .encoding(&encoding as &str)
+                                    .congestion_control(zenoh::qos::CongestionControl::Block)
+                                    .await
+                                {
+                                    Ok(_) => info!("Published {} bytes to {} (imported file, no storage)", payload_len, key),
+                                    Err(e) => error!("Failed to publish to {}: {}", key, e),
+                                }
+                                // Don't echo back - imported files are ephemeral, memory freed after publish
                             } else {
                                 match sess
                                     .put(&key, payload.clone())
@@ -2311,11 +2328,12 @@ impl eframe::App for ZenohExplorer {
                             }
                         }
 
-                        // Memory usage indicator
-                        if !self.messages.is_empty() || self.messages_dropped > 0 {
+                        // Memory usage indicator (include imported file memory)
+                        let total_memory_bytes = self.current_memory_bytes + self.import_memory_bytes;
+                        if !self.messages.is_empty() || self.messages_dropped > 0 || self.import_memory_bytes > 0 {
                             ui.separator();
 
-                            let memory_mb = self.current_memory_bytes as f32 / (1024.0 * 1024.0);
+                            let memory_mb = total_memory_bytes as f32 / (1024.0 * 1024.0);
                             let memory_percent = (memory_mb / self.max_memory_mb as f32 * 100.0).min(100.0);
 
                             // Show warning when approaching limit
@@ -2334,8 +2352,19 @@ impl eframe::App for ZenohExplorer {
                                 ExplorerColors::SUCCESS
                             };
 
+                            // Show import memory separately if present
+                            let memory_text = if self.import_memory_bytes > 0 {
+                                let import_mb = self.import_memory_bytes as f32 / (1024.0 * 1024.0);
+                                format!("Memory: {:.1}MB/{:.0}MB (+{:.1}MB import)",
+                                    self.current_memory_bytes as f32 / (1024.0 * 1024.0),
+                                    self.max_memory_mb as f32,
+                                    import_mb)
+                            } else {
+                                format!("Memory: {:.1}MB/{:.0}MB", memory_mb, self.max_memory_mb as f32)
+                            };
+
                             ui.label(
-                                RichText::new(format!("Memory: {:.1}MB/{:.0}MB", memory_mb, self.max_memory_mb as f32))
+                                RichText::new(memory_text)
                                     .color(memory_color)
                                     .size(TEXT_SMALL_SIZE)
                             );
@@ -3184,6 +3213,7 @@ impl ZenohExplorer {
                                     }
                                 };
 
+                                self.import_memory_bytes = bytes.len();
                                 self.publish_payload_bytes = Some(bytes);
                                 self.publish_encoding = "application/octet-stream".to_string();
                             }
@@ -3192,6 +3222,7 @@ impl ZenohExplorer {
                                 self.publish_payload_bytes = None;
                                 self.publish_payload_filename = None;
                                 self.publish_payload_expanded = false;
+                                self.import_memory_bytes = 0;
                             }
                         }
                     }
@@ -3201,6 +3232,7 @@ impl ZenohExplorer {
                         self.publish_payload_bytes = None;
                         self.publish_payload_filename = None;
                         self.publish_payload_expanded = false;
+                        self.import_memory_bytes = 0;
                         self.publish_payload = "Hello Zenoh!".to_string();
                         self.publish_encoding = "text/plain".to_string();
                     }
@@ -3301,20 +3333,31 @@ impl ZenohExplorer {
                 .clicked()
             {
                 if let Some(sender) = &self.command_sender {
+                    // Track if this is from file import before taking the bytes
+                    let from_import = self.publish_payload_bytes.is_some();
+
                     // Use raw bytes if imported (take to avoid clone), otherwise convert text to bytes
                     let payload_bytes = self.publish_payload_bytes.take()
                         .unwrap_or_else(|| self.publish_payload.as_bytes().to_vec());
 
-                    let _ = sender.send(ZenohCommand::Publish {
+                    let payload_len = payload_bytes.len();
+                    info!("GUI: About to send Publish command for {} bytes", payload_len);
+
+                    match sender.send(ZenohCommand::Publish {
                         key: self.publish_key.clone(),
                         payload: payload_bytes,
                         encoding: self.publish_encoding.clone(),
-                    });
+                        from_import, // Don't store imported files after publish
+                    }) {
+                        Ok(_) => info!("GUI: Publish command sent successfully for {} bytes", payload_len),
+                        Err(e) => error!("GUI: Failed to send Publish command: {:?}", e),
+                    }
 
                     // Clear the UI state since we moved the bytes
                     self.publish_payload_filename = None;
                     self.publish_payload = String::new();
                     self.publish_payload_expanded = false;
+                    self.import_memory_bytes = 0; // Memory freed after publish
                 }
             }
         });
