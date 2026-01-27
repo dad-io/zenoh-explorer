@@ -33,15 +33,21 @@
 
 A standalone native GUI application for exploring, debugging, and monitoring Zenoh networks.
 
+## Highlights
+
+- **Large File Transfers**: Publish files up to 4GB as single payloads. Files larger than 4GB are automatically chunked (64MB chunks) for seamless transmission. Network configuration supports messages up to 100GB.
+- **Built-in Query Service**: Enable a simple queryable service to respond to network queries using locally stored data. Test request/response patterns across remote keyspaces without deploying separate services—ideal for development and debugging.
+- **Real-time Network Monitoring**: Automatically monitors all network traffic via a dedicated session subscribed to `**`.
+
 ## Overview
 
 Zenoh Explorer is a network debugging tool built specifically for Zenoh networks. It provides a graphical interface to:
 
 - **Subscribe** to key expressions and monitor real-time data flows
-- **Publish** data to the network for testing and debugging
-- **Query** specific data from the network
+- **Publish** data to the network for testing and debugging, including large binary files
+- **Query** specific data from the network, or enable a queryable to serve requests
 - **Browse** the network data topology in real-time
-- TODO: **Monitor** all network activity with filtering and search capabilities
+- **Monitor** all network activity with filtering and search capabilities
 
 ## Features
 
@@ -56,10 +62,13 @@ Zenoh Explorer is a network debugging tool built specifically for Zenoh networks
   - Visual subscription status
 - **Data Publishing**: Send test data to any key in the network
   - Support for different encodings
+  - **File import support**: Import and publish binary files directly
+  - **Large payload support**: Up to 4GB single payloads, automatic chunking for larger files
   - Immediate visual feedback
 - **Query Interface**: Request data from the network with configurable timeouts
-  - Note: Requires queryable services on the network
   - Configurable timeout (default: 5 seconds)
+  - **Built-in queryable service**: Enable a queryable to respond to queries using locally published data
+  - Test request/response patterns without external services
 - **Network Browser**: Explore the hierarchical structure of keys and data
   - Tree-based visualization
   - Shows last received payload and message count
@@ -89,10 +98,10 @@ Zenoh Explorer is a network debugging tool built specifically for Zenoh networks
 
 ## Installation
 
+### Building from Source
+
 ### Prerequisites
 - Rust 1.70 or later
-
-### Building from Source
 
 ```bash
 git clone <repository-url>
@@ -114,8 +123,8 @@ The application will start with a default configuration connecting to `tcp/local
 
 1. **Launch the Application**: Run the executable or use `cargo run`
 2. **Configure Connection**:
-   - Set the locator (e.g., `tcp/192.168.1.100:7447`)
-   - Choose connection mode (Client or Peer)
+   - Leave the locator/connection settings as their defaults
+   - Choose Peer connection mode 
    - Click "Connect"
 3. **Start Exploring**: Use the tabs to subscribe, publish, query, or browse the network
 
@@ -129,12 +138,14 @@ The application will start with a default configuration connecting to `tcp/local
 #### Publish Tab
 - Send data to any key in the network
 - Specify payload content and encoding
+- **Import files**: Click "Import File" to publish binary files (up to 4GB single payload, automatic chunking for larger)
 - Test network connectivity and data flow
 
 #### Query Tab
 - Request data from specific selectors
 - Set custom timeout values
 - Include optional query payloads
+- **Enable Queryable**: Toggle on to make this instance respond to queries using locally published data
 
 #### Browse Tab
 - Explore the network's hierarchical key structure
@@ -158,19 +169,6 @@ The application will start with a default configuration connecting to `tcp/local
 - `sensor/*/temperature` - Match temperature readings from any sensor
 - `device/1/status` - Match the exact status key for device 1
 - `telemetry/**/cpu` - Match CPU metrics at any depth under telemetry
-
-## Configuration
-
-### Connection Settings
-- **Locators**: Specify one or more Zenoh endpoints (comma-separated)
-- **Mode**: Choose between Client (connects to routers) or Peer (mesh participant)
-- **Advanced Config**: Provide custom Zenoh configuration as JSON
-
-### Common Locator Formats
-- `tcp/localhost:7447` - Local TCP connection
-- `tcp/192.168.1.100:7447` - Remote TCP connection
-- `udp/224.0.0.224:7447` - UDP multicast
-- `quic/192.168.1.100:7447` - QUIC transport
 
 ## Architecture
 
@@ -211,10 +209,12 @@ The application uses a dual-thread architecture:
 - If peer mode shows "Worker Unresponsive", check logs with RUST_LOG=zenoh_explorer=info
 
 ### Query Functionality
-- **Important**: Queries require queryable services to be running on the network
+- Queries require queryable services to be running on the network
 - If you receive "No queryables available" alerts, it means no services are responding to your query
-- For passive data monitoring, use the Subscribe tab instead of Query
+- **Enable the built-in queryable**: In the Query tab, enable the queryable toggle to make this instance respond to queries using locally stored data (from previous publishes)
+- This lets you test request/response patterns across a network without deploying separate services
 - Queryables are different from publishers - they actively respond to query requests
+- For passive data monitoring, use the Subscribe tab instead of Query
 
 ### UI Issues
 - The application automatically enables/disables buttons based on connection status
@@ -259,6 +259,9 @@ Apache-2.0
 
 ## Recent Updates
 
+- **Large File Transfer Support**: Publish files up to 4GB as single payloads, with automatic 64MB chunking for larger files
+- **Built-in Queryable Service**: Enable a queryable to respond to queries across the network using locally published data
+- **File Import**: Import binary files directly from the Publish tab
 - **Memory Management**: Accurate memory tracking with configurable limits
 - **Rate Limiting**: Token bucket algorithm to prevent message flooding
 - **Worker Health Monitoring**: Visual indicators for system responsiveness

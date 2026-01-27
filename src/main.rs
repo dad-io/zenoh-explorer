@@ -1,3 +1,6 @@
+// Hide console window on Windows in release builds
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
 //! Zenoh Explorer - A native GUI application for exploring and debugging Zenoh networks.
 //!
 //! This application provides real-time monitoring, message inspection, publishing,
@@ -61,6 +64,24 @@ impl ExplorerColors {
 /// Application entry point.
 /// Initializes logging, configures the native window, and launches the GUI.
 fn main() -> eframe::Result<()> {
+    // Set up panic hook to log crashes on Windows (since there's no console)
+    #[cfg(target_os = "windows")]
+    {
+        std::panic::set_hook(Box::new(|panic_info| {
+            let msg = format!("Zenoh Explorer crashed: {}\n", panic_info);
+            // Try to write to a file next to the executable
+            if let Ok(exe_path) = std::env::current_exe() {
+                let log_path = exe_path.with_file_name("crash.log");
+                let _ = std::fs::write(&log_path, &msg);
+            }
+            // Also try user's home directory
+            if let Some(home) = std::env::var_os("USERPROFILE") {
+                let log_path = std::path::PathBuf::from(home).join("zenoh-explorer-crash.log");
+                let _ = std::fs::write(log_path, &msg);
+            }
+        }));
+    }
+
     // Initialize tracing for debug logging
     tracing_subscriber::fmt::init();
 
@@ -74,6 +95,10 @@ fn main() -> eframe::Result<()> {
             .with_title("Zenoh Explorer")
             .with_visible(true) // Ensure window is visible
             .with_active(true), // Make window active
+        // Use default renderer with software fallback for better Windows compatibility
+        renderer: eframe::Renderer::Glow,
+        // Enable hardware acceleration but allow fallback
+        hardware_acceleration: eframe::HardwareAcceleration::Preferred,
         ..Default::default()
     };
 
@@ -599,7 +624,7 @@ impl ZenohExplorer {
     /// Returns the appropriate button style for the current theme
     fn apply_theme(&self, ctx: &egui::Context) {
         // smooth animations
-        ctx.request_repaint_after(std::time::Duration::from_millis(1)); // ~60fps
+        ctx.request_repaint_after(std::time::Duration::from_millis(66)); // ~15fps
 
         ctx.style_mut(|style| {
             style.animation_time = 0.001; // smooth transitions
@@ -2293,12 +2318,12 @@ impl eframe::App for ZenohExplorer {
                                 (255.0 * pulse) as u8,
                             );
                             ui.label(
-                                RichText::new("⚠ Worker Unresponsive")
+                                RichText::new("Worker Unresponsive")
                                     .color(pulsing_color)
                                     .size(TEXT_SMALL_SIZE),
                             );
                             ui.separator();
-                            ui.ctx().request_repaint(); // Request continuous repaints for animation
+                            ui.ctx().request_repaint_after(std::time::Duration::from_millis(66)); // ~15fps for animation
                         }
 
                         // Connection status with loading indicator
@@ -2453,14 +2478,14 @@ impl eframe::App for ZenohExplorer {
 
                         // Show helpful tips based on mode
                         if self.connection_mode == "peer" {
-                            ui.label(RichText::new("💡 Peer mode: Use different listen ports for each peer on same machine (e.g., 7447 and 7448)").size(TEXT_SMALL_SIZE).color(self.text_secondary_color()));
+                            ui.label(RichText::new("Peer mode: Use different listen ports for each peer on same machine (e.g., 7447 and 7448)").size(TEXT_SMALL_SIZE).color(self.text_secondary_color()));
                         } else {
-                            ui.label(RichText::new("💡 Client mode: Connects to Zenoh router. Default: tcp/localhost:7447").size(TEXT_SMALL_SIZE).color(self.text_secondary_color()));
+                            ui.label(RichText::new("Client mode: Connects to Zenoh router. Default: tcp/localhost:7447").size(TEXT_SMALL_SIZE).color(self.text_secondary_color()));
                         }
 
                         // Show error details if connection failed
                         if let ConnectionStatus::Error(ref err) = self.connection_status {
-                            ui.colored_label(ExplorerColors::ERROR, format!("❌ Error: {}", err));
+                            ui.colored_label(ExplorerColors::ERROR, format!("Error: {}", err));
                         }
 
                         if ui.button("Connect").clicked() {
@@ -2537,8 +2562,8 @@ impl eframe::App for ZenohExplorer {
                 });
             });
 
-        // repaint for real-time message updates
-        ctx.request_repaint();
+        // repaint for real-time message updates (throttled to ~15fps)
+        ctx.request_repaint_after(std::time::Duration::from_millis(66));
     }
 }
 
