@@ -170,6 +170,14 @@ The application will start with a default configuration connecting to `tcp/local
 - `device/1/status` - Match the exact status key for device 1
 - `telemetry/**/cpu` - Match CPU metrics at any depth under telemetry
 
+### Container
+
+```
+cd zenoh-explorer
+docker build -t zenoh-explorer .
+docker run zenoh-explorer
+```
+
 ## Architecture
 
 Zenoh Explorer is built with:
