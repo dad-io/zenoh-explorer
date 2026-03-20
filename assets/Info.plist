@@ -4,11 +4,11 @@
 <plist version="1.0">
 <dict>
     <key>CFBundleName</key>
-    <string>SendIT</string>
+    <string>Zenoh Explorer</string>
     <key>CFBundleDisplayName</key>
-    <string>SendIT</string>
+    <string>Zenoh Explorer</string>
     <key>CFBundleIdentifier</key>
-    <string>io.dad.sendit</string>
+    <string>io.dad.zenoh-explorer</string>
     <key>CFBundleVersion</key>
     <string>0.1.0</string>
     <key>CFBundleShortVersionString</key>
@@ -18,7 +18,7 @@
     <key>CFBundleExecutable</key>
     <string>zenoh-explorer</string>
     <key>CFBundleIconFile</key>
-    <string>SendIT</string>
+    <string>ZenohExplorer</string>
     <key>LSMinimumSystemVersion</key>
     <string>13.0</string>
     <key>NSHighResolutionCapable</key>

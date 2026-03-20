@@ -32,6 +32,10 @@ CLAUDE.md
 CLAUDE_*.md
 PROJECT_CONTEXT*
 
+# Archive and docs
+_archive/
+OVERVIEW.md
+
 # Test files
 tests/
 test_*.sh

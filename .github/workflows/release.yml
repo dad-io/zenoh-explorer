@@ -58,7 +58,7 @@ jobs:
           chmod +x scripts/bundle-macos.sh
           ./scripts/bundle-macos.sh target/${{ matrix.target }}/release/${{ env.BINARY_NAME }}
           mkdir -p dist
-          cp -R target/SendIT.app dist/
+          cp -R "target/Zenoh Explorer.app" dist/
           cp README.md LICENSE* dist/ 2>/dev/null || true
           cd dist
           tar -czvf ../${{ env.BINARY_NAME }}-${{ matrix.target }}.tar.gz *

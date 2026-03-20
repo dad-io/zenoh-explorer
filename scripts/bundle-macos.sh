@@ -9,7 +9,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 BINARY="${1:-$PROJECT_ROOT/target/release/zenoh-explorer}"
-APP_NAME="SendIT"
+APP_NAME="Zenoh Explorer"
 BUNDLE_DIR="$PROJECT_ROOT/target/${APP_NAME}.app"
 
 if [ ! -f "$BINARY" ]; then
@@ -34,10 +34,10 @@ cp "$BINARY" "$BUNDLE_DIR/Contents/MacOS/"
 cp "$PROJECT_ROOT/assets/Info.plist" "$BUNDLE_DIR/Contents/"
 
 # Copy icon if present
-if [ -f "$PROJECT_ROOT/assets/SendIT.icns" ]; then
-    cp "$PROJECT_ROOT/assets/SendIT.icns" "$BUNDLE_DIR/Contents/Resources/"
+if [ -f "$PROJECT_ROOT/assets/ZenohExplorer.icns" ]; then
+    cp "$PROJECT_ROOT/assets/ZenohExplorer.icns" "$BUNDLE_DIR/Contents/Resources/"
 else
-    echo "Warning: No icon found at assets/SendIT.icns (app will use default icon)"
+    echo "Warning: No icon found at assets/ZenohExplorer.icns (app will use default icon)"
 fi
 
 echo "Bundle created at: $BUNDLE_DIR"
