@@ -35,56 +35,31 @@ Zenoh Explorer is a network debugging tool built specifically for Zenoh networks
 
 ## Recent Updates
 
-- **Large File Transfer Support**: Publish files up to 4GB as single payloads, with automatic 64MB chunking for larger files
+- **Large File Transfer Support**: Publish files up to 4GB as single payloads, with automatic 64MB chunking for 4GB+ & larger files
 - **Built-in Queryable Service**: Enable a queryable to respond to queries across the network using locally published data
 - **File Import**: Import binary files directly from the Publish tab
 - **Memory Management**: Accurate memory tracking with configurable limits
-- **Rate Limiting**: Token bucket algorithm to prevent message flooding
+- **Rate Limiting**: New algorithm to prevent message flooding
 - **Worker Health Monitoring**: Visual indicators for system responsiveness
 - **Enhanced UI**: Improved color schemes and button visibility
-- **Performance Controls**: Real-time adjustment of limits via UI sliders
 - **Better Error Messages**: More informative connection and query feedback
 
 ## Features
 
 ### Core Functionality
 - **Real-time Network Monitoring**: View all messages flowing through the Zenoh network
-  - Configurable memory and message limits
-  - Rate limiting to prevent UI flooding (configurable 10-10000 msg/s)
-  - Accurate memory usage tracking
 - **Interactive Subscriptions**: Subscribe to key expressions with wildcards and patterns
-  - Multiple concurrent subscriptions
-  - Clean cancellation support
-  - Visual subscription status
 - **Data Publishing**: Send test data to any key in the network
   - Support for different encodings
-  - **File import support**: Import and publish binary files directly
-  - **Large payload support**: Up to 4GB single payloads, automatic chunking for larger files
-  - Immediate visual feedback
+  - **File import support**: Import and publish binary files directly with 5GB+ file support
 - **Query Interface**: Request data from the network with configurable timeouts
   - Configurable timeout (default: 5 seconds)
   - **Built-in queryable service**: Enable a queryable to respond to queries using locally published data
   - Test request/response patterns without external services
-- **Network Browser**: Explore the hierarchical structure of keys and data
+- **Topic Browser**: Explore the hierarchical structure of keys and data
   - Tree-based visualization
   - Shows last received payload and message count
   - Auto-expanding navigation
-
-### User Interface
-- **Native Rust GUI**: Built with egui for native performance
-- **Dark/Light Mode**: Toggle between themes for comfortable viewing
-  - Optimized color schemes for readability
-  - Consistent visual hierarchy
-- **Message Filtering**: Search and filter network messages in real-time
-- **Auto-scroll**: Automatically follow new messages as they arrive
-- **Tabbed Interface**: Organized workflow with dedicated tabs for each function
-- **Health Monitoring**: Visual indicators for connection and worker status
-  - Connection status badge
-  - Worker health indicator (green = healthy, yellow = unresponsive)
-- **Performance Controls**: Adjustable limits directly from the UI
-  - Memory limit slider (10-1000 MB)
-  - Message count slider (100-50000)
-  - Rate limit slider (10-10000 msg/s)
 
 ### Connection Options
 - **Client Mode**: Connect as a Zenoh client to existing routers
@@ -125,10 +100,10 @@ The application will start with a default configuration connecting to `tcp/local
 
 ### Tabs Overview
 
-#### Subscribe Tab
-- Enter key expressions to listen for data (e.g., `sensors/**`, `device/*/status`)
-- View active subscriptions
-- Unsubscribe from specific key expressions
+#### Topics Tab
+- Explore the network's hierarchical key structure
+- See recently received data for each key
+- Expand/collapse tree nodes for navigation
 
 #### Publish Tab
 - Send data to any key in the network
@@ -141,17 +116,6 @@ The application will start with a default configuration connecting to `tcp/local
 - Set custom timeout values
 - Include optional query payloads
 - **Enable Queryable**: Toggle on to make this instance respond to queries using locally published data
-
-#### Browse Tab
-- Explore the network's hierarchical key structure
-- See recently received data for each key
-- Expand/collapse tree nodes for navigation
-
-#### Messages Tab
-- View all network activity in chronological order
-- Filter messages by key or content
-- Clear message history
-- Toggle auto-scroll for real-time monitoring
 
 #### Help Tab
 - Quick reference for key expression patterns
@@ -174,7 +138,7 @@ Zenoh Explorer is built with:
 - **Chrono**: Time handling for message timestamps
 - **Tracing**: Structured logging for debugging
 
-The application uses a dual-thread architecture:
+The application uses the following architecture:
 - **Main Thread**:
   - GUI rendering and user interaction
   - Message history management
@@ -202,36 +166,27 @@ The application uses a dual-thread architecture:
 - If you receive "No queryables available" alerts, it means no services are responding to your query
 - **Enable the built-in queryable**: In the Query tab, enable the queryable toggle to make this instance respond to queries using locally stored data (from previous publishes)
 
-### UI Issues
-- The application automatically enables/disables buttons based on connection status
-- Buttons are only active when connected to a Zenoh network
-
 ### Performance Tips
 - Use specific key expressions instead of broad wildcards when possible
 - Clear message history periodically for long-running sessions
-- Adjust performance limits using the sliders in the Messages tab:
-  - Lower memory limit for resource-constrained systems
-  - Higher rate limit for high-traffic monitoring
-  - Balance message count vs memory usage
 - Enable debug logging sparingly: `RUST_LOG=zenoh_explorer=debug`
-- Use release builds for production: `cargo build --release`
 
 ### Common Patterns
 - Start with `demo/**` to test basic connectivity
 - Use the publish tab to send test messages
 - Monitor the messages tab to verify data flow
-- Check the browse tab to understand network structure
+- Check the Topics tab to understand network structure
 - Use Subscribe for continuous data monitoring, Query for on-demand data requests
 
 ## Contributing
 
 This is a standalone Zenoh network explorer designed to be a generic debugging and monitoring tool. Contributions are welcome for:
 
+- Anything
+- Proactive peer / router topic tree browsing
+- Improved network / peer and router UX
+- Testing
 - Additional transport protocol support
-- Enhanced filtering and search capabilities
-- Performance optimizations
-- UI/UX improvements
-- Documentation updates
 
 ## License
 
