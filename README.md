@@ -1,6 +1,6 @@
 # Zenoh Explorer
 
-![alt text](<Screenshot 2026-03-20 at 10.44.53 AM.png>)
+![Zenoh Explorer](ze-screenshot.png)
 
 ```
 ╭━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╮
