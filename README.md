@@ -1,5 +1,7 @@
 # Zenoh Explorer
 
+<div align="center">
+
 ![Zenoh Explorer](ze-screenshot.png)
 
 ```
@@ -20,13 +22,9 @@
 │                                                                        │
 ╰━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╯
 ```
+
+</div>
 A standalone native GUI application for exploring, debugging, and monitoring Zenoh networks.
-
-## Highlights
-
-- **Large File Transfers**: Publish files up to 4GB as single payloads. Files larger than 4GB are automatically chunked (64MB chunks) for seamless transmission. Network configuration supports messages up to 100GB.
-- **Built-in Query Service**: Enable a simple queryable service to respond to network queries using locally stored data. Test request/response patterns across remote keyspaces without deploying separate services—ideal for development and debugging.
-- **Real-time Network Monitoring**: Automatically monitors all network traffic via a dedicated session subscribed to `**`.
 
 ## Overview
 
