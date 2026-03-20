@@ -190,12 +190,6 @@ The application uses a dual-thread architecture:
 
 ## Troubleshooting
 
-### Connection Issues
-- Verify the Zenoh router is running and accessible
-- Check firewall settings for the specified ports
-- Try connecting in peer mode if client mode fails
-- Ensure the locator format is correct
-
 ### Peer Mode Configuration
 - **For multicast discovery**: Leave locators empty in peer mode
 - **For specific endpoints**: Provide tcp/ip:port format
@@ -207,9 +201,6 @@ The application uses a dual-thread architecture:
 - Queries require queryable services to be running on the network
 - If you receive "No queryables available" alerts, it means no services are responding to your query
 - **Enable the built-in queryable**: In the Query tab, enable the queryable toggle to make this instance respond to queries using locally stored data (from previous publishes)
-- This lets you test request/response patterns across a network without deploying separate services
-- Queryables are different from publishers - they actively respond to query requests
-- For passive data monitoring, use the Subscribe tab instead of Query
 
 ### UI Issues
 - The application automatically enables/disables buttons based on connection status
