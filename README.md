@@ -1,7 +1,5 @@
 # Zenoh Explorer
 
-<div align="center">
-
 ![Zenoh Explorer](ze-screenshot.png)
 
 ```
@@ -23,7 +21,6 @@
 ╰━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╯
 ```
 
-</div>
 A standalone native GUI application for exploring, debugging, and monitoring Zenoh networks.
 
 ## Overview
@@ -35,6 +32,18 @@ Zenoh Explorer is a network debugging tool built specifically for Zenoh networks
 - **Query** specific data from the network, or enable a queryable to serve requests
 - **Browse** the network data topology in real-time
 - **Monitor** all network activity with filtering and search capabilities
+
+## Recent Updates
+
+- **Large File Transfer Support**: Publish files up to 4GB as single payloads, with automatic 64MB chunking for larger files
+- **Built-in Queryable Service**: Enable a queryable to respond to queries across the network using locally published data
+- **File Import**: Import binary files directly from the Publish tab
+- **Memory Management**: Accurate memory tracking with configurable limits
+- **Rate Limiting**: Token bucket algorithm to prevent message flooding
+- **Worker Health Monitoring**: Visual indicators for system responsiveness
+- **Enhanced UI**: Improved color schemes and button visibility
+- **Performance Controls**: Real-time adjustment of limits via UI sliders
+- **Better Error Messages**: More informative connection and query feedback
 
 ## Features
 
@@ -81,7 +90,6 @@ Zenoh Explorer is a network debugging tool built specifically for Zenoh networks
 - **Client Mode**: Connect as a Zenoh client to existing routers
 - **Peer Mode**: Participate as a peer in the mesh network
 - **Flexible Locators**: Support for TCP, UDP, and other transport protocols
-- **Custom Configuration**: Advanced Zenoh configuration via JSON
 
 ## Installation
 
@@ -157,19 +165,11 @@ The application will start with a default configuration connecting to `tcp/local
 - `device/1/status` - Match the exact status key for device 1
 - `telemetry/**/cpu` - Match CPU metrics at any depth under telemetry
 
-### Container
-
-```
-cd zenoh-explorer
-docker build -t zenoh-explorer .
-docker run zenoh-explorer
-```
-
 ## Architecture
 
 Zenoh Explorer is built with:
 - **egui/eframe**: Native GUI framework for responsive, cross-platform interfaces
-- **Zenoh 1.0**: Latest Zenoh protocol implementation with unstable features
+- **Zenoh 1.x**: Latest Zenoh protocol implementation with stable & unstable features
 - **Tokio**: Async runtime for handling network operations
 - **Chrono**: Time handling for message timestamps
 - **Tracing**: Structured logging for debugging
@@ -252,14 +252,4 @@ Apache-2.0
 - [Zenoh Python](https://github.com/eclipse-zenoh/zenoh-python): Python bindings for Zenoh
 - [Zenoh C](https://github.com/eclipse-zenoh/zenoh-c): C/C++ bindings for Zenoh
 
-## Recent Updates
 
-- **Large File Transfer Support**: Publish files up to 4GB as single payloads, with automatic 64MB chunking for larger files
-- **Built-in Queryable Service**: Enable a queryable to respond to queries across the network using locally published data
-- **File Import**: Import binary files directly from the Publish tab
-- **Memory Management**: Accurate memory tracking with configurable limits
-- **Rate Limiting**: Token bucket algorithm to prevent message flooding
-- **Worker Health Monitoring**: Visual indicators for system responsiveness
-- **Enhanced UI**: Improved color schemes and button visibility
-- **Performance Controls**: Real-time adjustment of limits via UI sliders
-- **Better Error Messages**: More informative connection and query feedback
