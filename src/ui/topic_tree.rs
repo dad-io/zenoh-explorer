@@ -42,10 +42,8 @@ impl TopicTreeUI for ZenohExplorer {
             });
 
             // Clear selection button to return to All Messages view
-            if self.selected_topic.is_some() {
-                if ui.button("⬅ Back to All Messages").clicked() {
-                    self.selected_topic = None;
-                }
+            if self.selected_topic.is_some() && ui.button("⬅ Back to All Messages").clicked() {
+                self.selected_topic = None;
             }
 
             ui.separator();
@@ -137,7 +135,7 @@ impl TopicTreeUI for ZenohExplorer {
                             ui.add_space(32.0);
                         });
                     } else {
-                        for (_, child) in &tree_clone.children {
+                        for child in tree_clone.children.values() {
                             self.show_tree_node(ui, child, String::new(), 0);
                         }
                     }
@@ -458,8 +456,7 @@ impl TopicTreeUI for ZenohExplorer {
         let indent = 12.0 * depth as f32;
         let is_selected = self
             .selected_topic
-            .as_ref()
-            .map_or(false, |t| t == &full_path);
+            .as_ref() == Some(&full_path);
 
         if node.children.is_empty() {
             // Leaf node - show as selectable in horizontal layout
@@ -573,7 +570,7 @@ impl TopicTreeUI for ZenohExplorer {
             });
 
             header_response.body(|ui| {
-                for (_, child) in &node.children {
+                for child in node.children.values() {
                     self.show_tree_node(ui, child, full_path.clone(), depth + 1);
                 }
             });

@@ -463,7 +463,7 @@ pub async fn zenoh_worker(
 
                             if payload_len > MAX_SINGLE_PAYLOAD {
                                 // Large payload - send in chunks
-                                let total_chunks = (payload_len + CHUNK_SIZE - 1) / CHUNK_SIZE;
+                                let total_chunks = payload_len.div_ceil(CHUNK_SIZE);
                                 info!("Chunking {} byte payload into {} chunks of {}MB each",
                                       payload_len, total_chunks, CHUNK_SIZE / 1024 / 1024);
 

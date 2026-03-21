@@ -114,6 +114,7 @@ pub struct ZenohMessage {
     /// Raw payload bytes for export (None = use payload string as UTF-8)
     pub payload_bytes: Option<Vec<u8>>,
     /// Identifies which session this message came from (publishing, monitor, or local echo)
+    #[allow(dead_code)]
     pub source: MessageSource,
 }
 
@@ -133,6 +134,7 @@ impl ZenohMessage {
     }
 
     /// Create a new message with raw bytes
+    #[allow(clippy::too_many_arguments)]
     pub fn new_with_bytes(
         key: String,
         payload: String,
@@ -173,7 +175,9 @@ pub enum ZenohCommand {
     Disconnect,
     Subscribe {
         key_expr: String,
+        #[allow(dead_code)] // TODO: Implement reliability configuration
         reliability: String,
+        #[allow(dead_code)] // TODO: Implement mode configuration
         mode: String,
     },
     Unsubscribe {
@@ -202,7 +206,6 @@ pub enum ZenohCommand {
 /// Events sent from the Zenoh worker thread back to the GUI thread based on network activity
 #[derive(Debug)]
 pub enum ZenohEvent {
-    Connected,
     Disconnected,
     DiscoveryUpdate {
         peers: usize,
@@ -237,6 +240,7 @@ pub enum ZenohEvent {
 pub enum MessageType {
     Subscribe,
     Publish,
+    #[allow(dead_code)] // Zenoh GET operation type — will be used for query message display
     Query,
     QueryReply,
 }
@@ -281,7 +285,9 @@ pub enum MessageSource {
 pub struct Subscription {
     pub id: String,
     pub key_expr: String,
+    #[allow(dead_code)]
     pub reliability: String,
+    #[allow(dead_code)]
     pub mode: String,
 }
 

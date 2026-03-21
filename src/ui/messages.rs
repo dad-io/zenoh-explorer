@@ -36,7 +36,7 @@ impl MessagesUI for ZenohExplorer {
             let mut limit_str = self.max_memory_mb.to_string();
             if ui.text_edit_singleline(&mut limit_str).changed() {
                 if let Ok(new_limit) = limit_str.parse::<usize>() {
-                    self.max_memory_mb = new_limit.max(10).min(1000); // Clamp between 10MB and 1GB
+                    self.max_memory_mb = new_limit.clamp(10, 1000); // Clamp between 10MB and 1GB
                 }
             }
 
@@ -44,7 +44,7 @@ impl MessagesUI for ZenohExplorer {
             let mut count_str = self.max_messages.to_string();
             if ui.text_edit_singleline(&mut count_str).changed() {
                 if let Ok(new_limit) = count_str.parse::<usize>() {
-                    self.max_messages = new_limit.max(100).min(50000); // Clamp between 100 and 50k
+                    self.max_messages = new_limit.clamp(100, 50000); // Clamp between 100 and 50k
                 }
             }
 
@@ -52,7 +52,7 @@ impl MessagesUI for ZenohExplorer {
             let mut rate_str = self.rate_limiter.max_messages_per_second.to_string();
             if ui.text_edit_singleline(&mut rate_str).changed() {
                 if let Ok(new_rate) = rate_str.parse::<usize>() {
-                    self.rate_limiter.max_messages_per_second = new_rate.max(10).min(10000);
+                    self.rate_limiter.max_messages_per_second = new_rate.clamp(10, 10000);
                     // 10-10k msg/s
                 }
             }

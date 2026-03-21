@@ -20,6 +20,7 @@ pub type ChunkInfo = (usize, usize, usize);
 ///
 /// Looks for keys matching `{topic}/__chunk/{total_size}/{total_chunks}/{chunk_index}`
 /// and returns (received_count, total_expected, total_file_size_bytes) or None.
+#[allow(clippy::type_complexity)]
 pub fn get_chunk_info(
     payload_store: &Arc<RwLock<HashMap<String, (Vec<u8>, DateTime<Utc>)>>>,
     topic: &str,
@@ -62,6 +63,7 @@ pub fn get_chunk_info(
 ///    sorts by chunk_index, verifies completeness, concatenates.
 ///
 /// Returns the full payload bytes or None if unavailable/incomplete.
+#[allow(clippy::type_complexity)]
 pub fn get_payload_for_export(
     payload_store: &Arc<RwLock<HashMap<String, (Vec<u8>, DateTime<Utc>)>>>,
     topic: &str,

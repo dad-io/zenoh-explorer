@@ -69,6 +69,7 @@ pub struct ZenohExplorer {
     pub(crate) paused_keys: std::collections::HashSet<String>,
     pub(crate) json_parse_cache: std::collections::HashMap<u64, Option<String>>,
     pub(crate) expanded_payloads: std::collections::HashSet<String>,
+    #[allow(clippy::type_complexity)]
     pub(crate) payload_store: Arc<RwLock<HashMap<String, (Vec<u8>, chrono::DateTime<chrono::Utc>)>>>,
 }
 
@@ -371,21 +372,21 @@ impl eframe::App for ZenohExplorer {
                         );
 
                         // Show discovered peers/routers when connected
-                        if matches!(self.connection_status, ConnectionStatus::Connected) {
-                            if self.discovered_peers > 0 || self.discovered_routers > 0 {
-                                let mut parts = Vec::new();
-                                if self.discovered_routers > 0 {
-                                    parts.push(format!("{}R", self.discovered_routers));
-                                }
-                                if self.discovered_peers > 0 {
-                                    parts.push(format!("{}P", self.discovered_peers));
-                                }
-                                ui.label(
-                                    RichText::new(format!("({})", parts.join(" ")))
-                                        .color(self.text_tertiary_color())
-                                        .size(TEXT_SMALL_SIZE),
-                                );
+                        if matches!(self.connection_status, ConnectionStatus::Connected)
+                            && (self.discovered_peers > 0 || self.discovered_routers > 0)
+                        {
+                            let mut parts = Vec::new();
+                            if self.discovered_routers > 0 {
+                                parts.push(format!("{}R", self.discovered_routers));
                             }
+                            if self.discovered_peers > 0 {
+                                parts.push(format!("{}P", self.discovered_peers));
+                            }
+                            ui.label(
+                                RichText::new(format!("({})", parts.join(" ")))
+                                    .color(self.text_tertiary_color())
+                                    .size(TEXT_SMALL_SIZE),
+                            );
                         }
 
                         // Memory usage indicator

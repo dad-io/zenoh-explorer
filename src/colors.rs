@@ -5,6 +5,7 @@ use egui::Color32;
 /// Colors are optimized for readability and visual hierarchy.
 #[cfg_attr(test, derive(Debug))]
 pub struct ExplorerColors;
+#[allow(dead_code)] // Theme palette includes colors for future UI expansion
 impl ExplorerColors {
     // Light mode colors
     pub const BACKGROUND: Color32 = Color32::from_rgb(248, 248, 248);

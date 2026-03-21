@@ -103,7 +103,7 @@ impl ZenohExplorer {
         let now = Instant::now();
 
         // Clean old hashes periodically
-        if self.message_hashes.len() % 100 == 0 {
+        if self.message_hashes.len().is_multiple_of(100) {
             self.message_hashes.retain(|_, &mut timestamp| {
                 now.duration_since(timestamp) < self.dedup_ttl
             });
@@ -142,11 +142,6 @@ impl ZenohExplorer {
         // Process each event and update UI state accordingly
         for event in events {
             match event {
-                ZenohEvent::Connected => {
-                    // Legacy event - treat as fully connected for backwards compatibility
-                    info!("GUI received Connected event (legacy)");
-                    self.connection_status = ConnectionStatus::Connected;
-                }
                 ZenohEvent::PublishingConnected => {
                     // Publishing session connected, waiting for monitor session
                     info!("GUI received PublishingConnected event");

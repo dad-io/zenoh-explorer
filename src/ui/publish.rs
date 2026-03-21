@@ -92,15 +92,13 @@ impl PublishUI for ZenohExplorer {
                         }
                     }
                 }
-                if self.publish_payload_bytes.is_some() {
-                    if ui.button("✖ Clear").clicked() {
-                        self.publish_payload_bytes = None;
-                        self.publish_payload_filename = None;
-                        self.publish_payload_expanded = false;
-                        self.import_memory_bytes = 0;
-                        self.publish_payload = "Hello Zenoh!".to_string();
-                        self.publish_encoding = "text/plain".to_string();
-                    }
+                if self.publish_payload_bytes.is_some() && ui.button("✖ Clear").clicked() {
+                    self.publish_payload_bytes = None;
+                    self.publish_payload_filename = None;
+                    self.publish_payload_expanded = false;
+                    self.import_memory_bytes = 0;
+                    self.publish_payload = "Hello Zenoh!".to_string();
+                    self.publish_encoding = "text/plain".to_string();
                 }
             });
 
@@ -113,7 +111,7 @@ impl PublishUI for ZenohExplorer {
 
                 ui.horizontal(|ui| {
                     ui.label(
-                        RichText::new(format!("{}", filename))
+                        RichText::new(filename)
                             .color(self.text_secondary_color()),
                     );
                     if let Some(len) = bytes_len {
