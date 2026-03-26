@@ -1,5 +1,5 @@
 # Zenoh Explorer
-
+A GUI application for exploring, debugging, and monitoring Zenoh networks.
 ![Zenoh Explorer](ze-screenshot.png)
 
 ```
@@ -20,33 +20,11 @@
           │                                                                        │
           ╰━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╯
 ```
-
-A standalone native GUI application for exploring, debugging, and monitoring Zenoh networks.
-
 ## Overview
 
 Zenoh Explorer is a network debugging tool built specifically for Zenoh networks. It provides a graphical interface to:
 
-- **Subscribe** to key expressions and monitor real-time data flows
-- **Publish** data to the network for testing and debugging, including large binary files
-- **Query** specific data from the network, or enable a queryable to serve requests
-- **Browse** the network data topology in real-time
-- **Monitor** all network activity with filtering and search capabilities
-
-## Recent Updates
-
-- **Large File Transfer Support**: Publish files up to 4GB as single payloads, with automatic 64MB chunking for 4GB+ & larger files
-- **Built-in Queryable Service**: Enable a queryable to respond to queries across the network using locally published data
-- **File Import**: Import binary files directly from the Publish tab
-- **Memory Management**: Accurate memory tracking with configurable limits
-- **Rate Limiting**: New algorithm to prevent message flooding
-- **Worker Health Monitoring**: Visual indicators for system responsiveness
-- **Enhanced UI**: Improved color schemes and button visibility
-- **Better Error Messages**: More informative connection and query feedback
-
 ## Features
-
-### Core Functionality
 - **Real-time Network Monitoring**: View all messages flowing through the Zenoh network
 - **Interactive Subscriptions**: Subscribe to key expressions with wildcards and patterns
 - **Data Publishing**: Send test data to any key in the network
@@ -79,48 +57,12 @@ cd zenoh-explorer
 cargo build --release
 ```
 
-### Running
-
-```bash
-cargo run --release
-```
-
-The application will start with a default configuration connecting to `tcp/localhost:7447`.
-
-## Usage
-
-### Getting Started
-
-1. **Launch the Application**: Run the executable or use `cargo run`
-2. **Configure Connection**:
-   - Leave the locator/connection settings as their defaults
-   - Choose Peer connection mode 
-   - Click "Connect"
-3. **Start Exploring**: Use the tabs to subscribe, publish, query, or browse the network
-
-### Tabs Overview
-
-#### Topics Tab
-- Explore the network's hierarchical key structure
-- See recently received data for each key
-- Expand/collapse tree nodes for navigation
-
-#### Publish Tab
-- Send data to any key in the network
-- Specify payload content and encoding
-- **Import files**: Click "Import File" to publish binary files (up to 4GB single payload, automatic chunking for larger)
-- Test network connectivity and data flow
-
-#### Query Tab
-- Request data from specific selectors
-- Set custom timeout values
-- Include optional query payloads
-- **Enable Queryable**: Toggle on to make this instance respond to queries using locally published data
-
-#### Help Tab
-- Quick reference for key expression patterns
-- Getting started guide
-- Usage examples
+## Common Usage
+- Start with `demo/**` to test basic connectivity
+- Use the publish tab to send test messages
+- Monitor the messages tab to verify data flow
+- Check the Topics tab to understand network structure
+- Use Subscribe for continuous data monitoring, Query for on-demand data requests
 
 ### Key Expression Examples
 
@@ -128,29 +70,6 @@ The application will start with a default configuration connecting to `tcp/local
 - `sensor/*/temperature` - Match temperature readings from any sensor
 - `device/1/status` - Match the exact status key for device 1
 - `telemetry/**/cpu` - Match CPU metrics at any depth under telemetry
-
-## Architecture
-
-Zenoh Explorer is built with:
-- **egui/eframe**: Native GUI framework for responsive, cross-platform interfaces
-- **Zenoh 1.x**: Latest Zenoh protocol implementation with stable & unstable features
-- **Tokio**: Async runtime for handling network operations
-- **Chrono**: Time handling for message timestamps
-- **Tracing**: Structured logging for debugging
-
-The application uses the following architecture:
-- **Main Thread**:
-  - GUI rendering and user interaction
-  - Message history management
-  - Worker health monitoring
-- **Worker Thread**:
-  - Async Zenoh operations
-  - Subscription management
-  - Network communication
-- **Communication**:
-  - `std::sync::mpsc` channels for thread-safe messaging
-  - Command/Event pattern for clean separation
-  - Health check ping/pong for liveness detection
 
 ## Troubleshooting
 
@@ -170,13 +89,6 @@ The application uses the following architecture:
 - Use specific key expressions instead of broad wildcards when possible
 - Clear message history periodically for long-running sessions
 - Enable debug logging sparingly: `RUST_LOG=zenoh_explorer=debug`
-
-### Common Patterns
-- Start with `demo/**` to test basic connectivity
-- Use the publish tab to send test messages
-- Monitor the messages tab to verify data flow
-- Check the Topics tab to understand network structure
-- Use Subscribe for continuous data monitoring, Query for on-demand data requests
 
 ## Contributing
 
