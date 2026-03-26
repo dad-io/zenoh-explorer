@@ -20,10 +20,6 @@ A GUI application for exploring, debugging, and monitoring Zenoh networks.
           │                                                                        │
           ╰━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╯
 ```
-## Overview
-
-Zenoh Explorer is a network debugging tool built specifically for Zenoh networks. It provides a graphical interface to:
-
 ## Features
 - **Real-time Network Monitoring**: View all messages flowing through the Zenoh network
 - **Interactive Subscriptions**: Subscribe to key expressions with wildcards and patterns
