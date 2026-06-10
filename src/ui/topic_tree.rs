@@ -165,10 +165,14 @@ impl TopicTreeUI for ZenohExplorer {
                     .on_hover_text("Save full payload to file (original size)")
                     .clicked()
                 {
-                    if let Some(payload) =
-                        transfer::get_payload_for_export(&self.payload_store, topic)
-                    {
-                        transfer::export_payload_to_file(topic, &payload);
+                    let result = self
+                        .payload_store
+                        .read()
+                        .map_err(|_| "Payload store lock poisoned".to_string())
+                        .and_then(|store| transfer::get_payload_for_export(&store, topic));
+                    match result {
+                        Ok(payload) => transfer::export_payload_to_file(topic, &payload.bytes),
+                        Err(e) => self.ui_alert = Some(format!("Export failed: {}", e)),
                     }
                 }
 

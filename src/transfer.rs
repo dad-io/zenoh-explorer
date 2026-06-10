@@ -9,7 +9,6 @@
 //! - MAX_SINGLE_PAYLOAD = u32::MAX ~4GB (publish side, in zenoh_worker.rs)
 
 use std::collections::{HashMap, HashSet};
-use std::sync::{Arc, RwLock};
 use tracing::info;
 
 use chrono::{DateTime, Utc};
@@ -144,71 +143,79 @@ pub fn chunk_progress(store: &PayloadStoreMap, topic: &str) -> Option<ChunkProgr
     })
 }
 
-/// Attempt to retrieve and reassemble a payload from the store.
+/// A payload ready for export.
+#[derive(Debug)]
+pub struct ExportPayload {
+    pub bytes: Vec<u8>,
+    #[allow(dead_code)] // consumed by Task 19 (export_payload_to_file rewrite)
+    pub filename: Option<String>,
+}
+
+/// Retrieve and validate a payload for export.
 ///
-/// 1. First tries direct lookup by topic key (non-chunked payloads).
-/// 2. Falls back to chunk reassembly: collects all `{topic}/__chunk/` keys,
-///    sorts by chunk_index, verifies completeness, concatenates.
+/// 1. Direct lookup by topic key (non-chunked payloads).
+/// 2. Chunk reassembly of the NEWEST chunk group: index set must be exactly
+///    0..total_chunks and the reassembled length must equal total_size.
 ///
-/// Returns the full payload bytes or None if unavailable/incomplete.
+/// Errors carry a human-readable reason for the UI.
 pub fn get_payload_for_export(
-    payload_store: &Arc<RwLock<PayloadStoreMap>>,
+    store: &PayloadStoreMap,
     topic: &str,
-) -> Option<Vec<u8>> {
-    if let Ok(store) = payload_store.read() {
-        // First try direct lookup
-        if let Some(entry) = store.get(topic) {
-            return Some(entry.bytes.clone());
-        }
+) -> Result<ExportPayload, String> {
+    if let Some(e) = store.get(topic) {
+        return Ok(ExportPayload {
+            bytes: e.bytes.clone(),
+            filename: e.filename.clone(),
+        });
+    }
 
-        // Check for chunked payload: look for topic/__chunk/{size}/{count}/{index}
-        let chunk_prefix = format!("{}/__chunk/", topic);
-        let mut chunks: Vec<(usize, usize, usize, &Vec<u8>)> = Vec::new(); // (total_size, total_chunks, index, data)
+    let progress =
+        chunk_progress(store, topic).ok_or_else(|| format!("No payload stored for '{}'", topic))?;
 
-        for (key, entry) in store.iter() {
-            let data = &entry.bytes;
-            if key.starts_with(&chunk_prefix) {
-                // Parse: topic/__chunk/{total_size}/{total_chunks}/{chunk_index}
-                let suffix = &key[chunk_prefix.len()..];
-                let parts: Vec<&str> = suffix.split('/').collect();
-                if parts.len() == 3 {
-                    if let (Ok(total_size), Ok(total_chunks), Ok(chunk_idx)) = (
-                        parts[0].parse::<usize>(),
-                        parts[1].parse::<usize>(),
-                        parts[2].parse::<usize>(),
-                    ) {
-                        chunks.push((total_size, total_chunks, chunk_idx, data));
-                    }
-                }
-            }
-        }
-
-        if !chunks.is_empty() {
-            // Sort by chunk index
-            chunks.sort_by_key(|(_, _, idx, _)| *idx);
-
-            let (total_size, total_chunks, _, _) = chunks[0];
-
-            // Verify we have all chunks
-            if chunks.len() == total_chunks {
-                // Reassemble
-                let mut reassembled = Vec::with_capacity(total_size);
-                for (_, _, _, data) in &chunks {
-                    reassembled.extend_from_slice(data);
-                }
-
-                info!(
-                    "Reassembled {} chunks into {} bytes",
-                    chunks.len(),
-                    reassembled.len()
-                );
-                return Some(reassembled);
-            } else {
-                info!("Missing chunks: have {}/{}", chunks.len(), total_chunks);
+    // Collect the newest group's chunks by index (BTreeMap = sorted, dedup by key).
+    let mut by_index: std::collections::BTreeMap<usize, &PayloadEntry> = Default::default();
+    for (key, e) in store.iter() {
+        if let Some((t, m)) = parse_chunk_key(key) {
+            if t == topic
+                && m.total_size == progress.total_size
+                && m.total_chunks == progress.total_chunks
+            {
+                by_index.insert(m.index, e);
             }
         }
     }
-    None
+
+    if by_index.len() != progress.total_chunks {
+        return Err(format!(
+            "Incomplete transfer: have {} of {} chunks",
+            by_index.len(),
+            progress.total_chunks
+        ));
+    }
+
+    let mut bytes = Vec::with_capacity(progress.total_size);
+    let mut filename = None;
+    for e in by_index.values() {
+        bytes.extend_from_slice(&e.bytes);
+        if filename.is_none() {
+            filename = e.filename.clone();
+        }
+    }
+
+    if bytes.len() != progress.total_size {
+        return Err(format!(
+            "Reassembled size mismatch: got {} bytes, expected {}",
+            bytes.len(),
+            progress.total_size
+        ));
+    }
+
+    info!(
+        "Reassembled {} chunks into {} bytes",
+        progress.total_chunks,
+        bytes.len()
+    );
+    Ok(ExportPayload { bytes, filename })
 }
 
 /// Export raw payload bytes to a file via native file dialog.
@@ -269,6 +276,58 @@ mod tests {
             received_at: chrono::Utc.timestamp_opt(ts_secs, 0).unwrap(),
             filename: None,
         }
+    }
+
+    fn entry_with(bytes: Vec<u8>, ts: i64) -> PayloadEntry {
+        PayloadEntry {
+            bytes,
+            received_at: chrono::Utc.timestamp_opt(ts, 0).unwrap(),
+            filename: None,
+        }
+    }
+
+    #[test]
+    fn export_direct_hit() {
+        let mut store = PayloadStoreMap::new();
+        store.insert("t".into(), entry_with(vec![9, 9], 1));
+        assert_eq!(
+            get_payload_for_export(&store, "t").unwrap().bytes,
+            vec![9, 9]
+        );
+    }
+
+    #[test]
+    fn export_reassembles_in_index_order() {
+        let mut store = PayloadStoreMap::new();
+        store.insert("t/__chunk/6/2/1".into(), entry_with(vec![4, 5, 6], 1));
+        store.insert("t/__chunk/6/2/0".into(), entry_with(vec![1, 2, 3], 2));
+        assert_eq!(
+            get_payload_for_export(&store, "t").unwrap().bytes,
+            vec![1, 2, 3, 4, 5, 6]
+        );
+    }
+
+    #[test]
+    fn export_incomplete_reports_progress() {
+        let mut store = PayloadStoreMap::new();
+        store.insert("t/__chunk/6/2/0".into(), entry_with(vec![1, 2, 3], 1));
+        let err = get_payload_for_export(&store, "t").unwrap_err();
+        assert!(err.contains("1 of 2"), "got: {err}");
+    }
+
+    #[test]
+    fn export_size_mismatch_is_error() {
+        let mut store = PayloadStoreMap::new();
+        store.insert("t/__chunk/99/2/0".into(), entry_with(vec![1, 2, 3], 1));
+        store.insert("t/__chunk/99/2/1".into(), entry_with(vec![4, 5, 6], 2));
+        let err = get_payload_for_export(&store, "t").unwrap_err();
+        assert!(err.contains("size mismatch"), "got: {err}");
+    }
+
+    #[test]
+    fn export_nothing_stored_is_error() {
+        let store = PayloadStoreMap::new();
+        assert!(get_payload_for_export(&store, "t").is_err());
     }
 
     #[test]
