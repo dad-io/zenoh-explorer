@@ -11,15 +11,17 @@
 use std::sync::{Arc, RwLock};
 use tracing::info;
 
-use crate::types::PayloadStoreMap;
+use crate::types::{PayloadEntry, PayloadStoreMap};
 
 /// Publish-side chunk size (must match zenoh_worker.rs CHUNK_SIZE).
-#[allow(dead_code)]
 pub const CHUNK_SIZE: usize = 64 * 1024 * 1024;
+
+/// Cap on non-chunk entries in the export store. Chunk entries are exempt:
+/// they are bounded per-topic by their own total_chunks and purged by generation.
+pub const MAX_PLAIN_ENTRIES: usize = 500;
 
 /// Metadata parsed from a chunk key `{topic}/__chunk/{total_size}/{total_chunks}/{index}`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[allow(dead_code)]
 pub struct ChunkMeta {
     pub total_size: usize,
     pub total_chunks: usize,
@@ -29,7 +31,6 @@ pub struct ChunkMeta {
 impl ChunkMeta {
     /// Values come from a network-controlled key string — reject anything that
     /// could drive an absurd allocation or out-of-range index.
-    #[allow(dead_code)]
     pub fn is_sane(&self) -> bool {
         self.total_chunks > 0
             && self.index < self.total_chunks
@@ -38,7 +39,6 @@ impl ChunkMeta {
 }
 
 /// Split a chunk key into (topic, meta). Returns None for non-chunk keys.
-#[allow(dead_code)]
 pub fn parse_chunk_key(key: &str) -> Option<(&str, ChunkMeta)> {
     let (topic, suffix) = key.split_once("/__chunk/")?;
     let mut parts = suffix.split('/');
@@ -56,6 +56,48 @@ pub fn parse_chunk_key(key: &str) -> Option<(&str, ChunkMeta)> {
             index,
         },
     ))
+}
+
+/// Insert a payload into the export store, enforcing the eviction policy:
+/// - chunk keys: purge any stale-generation chunks for the same topic, never
+///   evict other entries, drop entries with insane metadata
+/// - plain keys: evict the oldest plain entry once the cap is reached
+pub fn insert_payload(store: &mut PayloadStoreMap, key: String, entry: PayloadEntry) {
+    if let Some((topic, meta)) = parse_chunk_key(&key) {
+        if !meta.is_sane() {
+            info!("Dropping chunk with insane metadata: {}", key);
+            return;
+        }
+        let prefix = format!("{}/__chunk/", topic);
+        let stale: Vec<String> = store
+            .keys()
+            .filter(|k| k.starts_with(&prefix))
+            .filter(|k| match parse_chunk_key(k) {
+                Some((_, m)) => {
+                    (m.total_size, m.total_chunks) != (meta.total_size, meta.total_chunks)
+                }
+                None => true,
+            })
+            .cloned()
+            .collect();
+        for k in stale {
+            store.remove(&k);
+        }
+        store.insert(key, entry);
+    } else {
+        let plain_count = store.keys().filter(|k| !k.contains("/__chunk/")).count();
+        if plain_count >= MAX_PLAIN_ENTRIES && !store.contains_key(&key) {
+            let oldest = store
+                .iter()
+                .filter(|(k, _)| !k.contains("/__chunk/"))
+                .min_by_key(|(_, e)| e.received_at)
+                .map(|(k, _)| k.clone());
+            if let Some(k) = oldest {
+                store.remove(&k);
+            }
+        }
+        store.insert(key, entry);
+    }
 }
 
 /// Chunk info returned by `get_chunk_info`: (received_count, total_expected, total_file_size)
@@ -216,6 +258,74 @@ pub fn format_size(size: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::types::{PayloadEntry, PayloadStoreMap};
+    use chrono::TimeZone;
+
+    fn entry(ts_secs: i64) -> PayloadEntry {
+        PayloadEntry {
+            bytes: vec![1, 2, 3],
+            received_at: chrono::Utc.timestamp_opt(ts_secs, 0).unwrap(),
+            filename: None,
+        }
+    }
+
+    #[test]
+    fn evicts_oldest_plain_entry_at_cap() {
+        let mut store = PayloadStoreMap::new();
+        for i in 0..MAX_PLAIN_ENTRIES {
+            store.insert(format!("topic/{}", i), entry(1000 + i as i64));
+        }
+        insert_payload(&mut store, "topic/new".into(), entry(99999));
+        assert_eq!(store.len(), MAX_PLAIN_ENTRIES);
+        assert!(!store.contains_key("topic/0")); // oldest evicted
+        assert!(store.contains_key("topic/new"));
+    }
+
+    #[test]
+    fn chunk_entries_exempt_from_plain_cap() {
+        let mut store = PayloadStoreMap::new();
+        for i in 0..MAX_PLAIN_ENTRIES {
+            store.insert(format!("topic/{}", i), entry(1000 + i as i64));
+        }
+        // 600 chunks of one transfer all fit alongside the plain cap
+        for i in 0..600usize {
+            insert_payload(
+                &mut store,
+                format!("big/file/__chunk/{}/600/{}", 600 * CHUNK_SIZE, i),
+                entry(2000),
+            );
+        }
+        let chunk_count = store.keys().filter(|k| k.contains("/__chunk/")).count();
+        assert_eq!(chunk_count, 600);
+        assert_eq!(store.len(), MAX_PLAIN_ENTRIES + 600);
+    }
+
+    #[test]
+    fn new_chunk_generation_purges_stale_group() {
+        let mut store = PayloadStoreMap::new();
+        insert_payload(&mut store, "t/__chunk/200000000/3/0".into(), entry(1));
+        insert_payload(&mut store, "t/__chunk/200000000/3/1".into(), entry(2));
+        // New transfer on same topic with different metadata
+        insert_payload(&mut store, "t/__chunk/300000000/5/0".into(), entry(3));
+        assert!(!store.contains_key("t/__chunk/200000000/3/0"));
+        assert!(!store.contains_key("t/__chunk/200000000/3/1"));
+        assert!(store.contains_key("t/__chunk/300000000/5/0"));
+        // Other topics' chunks untouched
+        insert_payload(&mut store, "other/__chunk/100/1/0".into(), entry(4));
+        insert_payload(&mut store, "t/__chunk/300000000/5/1".into(), entry(5));
+        assert!(store.contains_key("other/__chunk/100/1/0"));
+    }
+
+    #[test]
+    fn insane_chunk_keys_dropped() {
+        let mut store = PayloadStoreMap::new();
+        insert_payload(
+            &mut store,
+            "t/__chunk/9999999999999999/1/0".into(),
+            entry(1),
+        );
+        assert!(store.is_empty());
+    }
 
     #[test]
     fn parse_chunk_key_valid() {

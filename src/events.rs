@@ -328,15 +328,9 @@ impl ZenohExplorer {
 
         // Store full payload bytes for export
         if payload_len <= MAX_EXPORT_PAYLOAD {
-            // Use blocking write() to ensure raw bytes are always stored
             if let Ok(mut store) = self.payload_store.write() {
-                if store.len() >= 500 {
-                    if let Some(key) = store.keys().next().cloned() {
-                        store.remove(&key);
-                    }
-                }
-                // Store raw bytes for export
-                store.insert(
+                crate::transfer::insert_payload(
+                    &mut store,
                     message.key.clone(),
                     PayloadEntry {
                         bytes: raw_bytes,
