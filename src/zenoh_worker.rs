@@ -234,6 +234,11 @@ pub async fn zenoh_worker(
                                                                                 }
                                                                             };
 
+                                                                        let filename = sample
+                                                                            .attachment()
+                                                                            .and_then(|a| a.try_to_string().ok())
+                                                                            .map(|s| s.into_owned());
+
                                                                         let message = ZenohMessage::new_with_bytes(
                                                                             sample.key_expr().to_string(),
                                                                             payload_display,
@@ -243,7 +248,8 @@ pub async fn zenoh_worker(
                                                                             MessageType::Subscribe,
                                                                             false,  // Monitor messages are always from remote
                                                                             MessageSource::MonitorSession,
-                                                                        );
+                                                                        )
+                                                                        .with_filename(filename);
 
                                                                         let _ = event_sender_clone
                                                                             .send(ZenohEvent::MessageReceived(message));
@@ -389,6 +395,11 @@ pub async fn zenoh_worker(
                                                                     }
                                                                 };
 
+                                                            let filename = sample
+                                                                .attachment()
+                                                                .and_then(|a| a.try_to_string().ok())
+                                                                .map(|s| s.into_owned());
+
                                                             let message = ZenohMessage::new_with_bytes(
                                                                 sample.key_expr().to_string(),
                                                                 payload_display,
@@ -398,7 +409,8 @@ pub async fn zenoh_worker(
                                                                 MessageType::Subscribe,
                                                                 false,  // Subscription messages are always from remote
                                                                 MessageSource::PublishingSession,
-                                                            );
+                                                            )
+                                                            .with_filename(filename);
 
                                                             match event_sender_clone
                                                                 .send(ZenohEvent::MessageReceived(message)) {
@@ -443,6 +455,7 @@ pub async fn zenoh_worker(
                         payload,
                         encoding,
                         from_import,
+                        filename,
                     } => {
                         if let Some(ref sess) = publishing_session {
                             // Generate display string - only preview, never clone full payload
@@ -524,12 +537,14 @@ pub async fn zenoh_worker(
                                         key, payload_len, total_chunks, chunk_num
                                     );
 
-                                    match sess
+                                    let mut put = sess
                                         .put(&chunk_key, chunk)
                                         .encoding(&encoding as &str)
-                                        .congestion_control(zenoh::qos::CongestionControl::Block)
-                                        .await
-                                    {
+                                        .congestion_control(zenoh::qos::CongestionControl::Block);
+                                    if let Some(ref name) = filename {
+                                        put = put.attachment(name.as_bytes().to_vec());
+                                    }
+                                    match put.await {
                                         Ok(_) => info!(
                                             "Published chunk {}/{} ({} bytes) to {}",
                                             chunk_num + 1,
@@ -559,12 +574,14 @@ pub async fn zenoh_worker(
                                 }
                             } else if payload_len > 100 * 1024 * 1024 {
                                 // 100MB threshold for no-echo
-                                match sess
+                                let mut put = sess
                                     .put(&key, payload) // Move directly, no clone
                                     .encoding(&encoding as &str)
-                                    .congestion_control(zenoh::qos::CongestionControl::Block)
-                                    .await
-                                {
+                                    .congestion_control(zenoh::qos::CongestionControl::Block);
+                                if let Some(ref name) = filename {
+                                    put = put.attachment(name.as_bytes().to_vec());
+                                }
+                                match put.await {
                                     Ok(_) => info!(
                                         "Published {} bytes to {} (large payload, no echo)",
                                         payload_len, key
@@ -574,12 +591,14 @@ pub async fn zenoh_worker(
                                 // Don't echo - too large. Subscription will receive it.
                             } else if from_import {
                                 // Imported file - publish but don't store/echo to free memory immediately
-                                match sess
+                                let mut put = sess
                                     .put(&key, payload) // Move directly, no clone needed
                                     .encoding(&encoding as &str)
-                                    .congestion_control(zenoh::qos::CongestionControl::Block)
-                                    .await
-                                {
+                                    .congestion_control(zenoh::qos::CongestionControl::Block);
+                                if let Some(ref name) = filename {
+                                    put = put.attachment(name.as_bytes().to_vec());
+                                }
+                                match put.await {
                                     Ok(_) => info!(
                                         "Published {} bytes to {} (imported file, no storage)",
                                         payload_len, key
@@ -588,12 +607,14 @@ pub async fn zenoh_worker(
                                 }
                                 // Don't echo back - imported files are ephemeral, memory freed after publish
                             } else {
-                                match sess
+                                let mut put = sess
                                     .put(&key, payload.clone())
                                     .encoding(&encoding as &str)
-                                    .congestion_control(zenoh::qos::CongestionControl::Block)
-                                    .await
-                                {
+                                    .congestion_control(zenoh::qos::CongestionControl::Block);
+                                if let Some(ref name) = filename {
+                                    put = put.attachment(name.as_bytes().to_vec());
+                                }
+                                match put.await {
                                     Ok(_) => info!("Published {} bytes to {}", payload_len, key),
                                     Err(e) => error!("Failed to publish to {}: {}", key, e),
                                 }
@@ -608,7 +629,8 @@ pub async fn zenoh_worker(
                                     MessageType::Publish,
                                     true, // Published from this app, so it's local
                                     MessageSource::LocalEcho,
-                                );
+                                )
+                                .with_filename(filename.clone());
 
                                 let _ = event_sender.send(ZenohEvent::MessageReceived(message));
                             }

@@ -173,7 +173,6 @@ pub struct PayloadEntry {
     #[allow(dead_code)]
     pub received_at: DateTime<Utc>,
     /// Original filename transmitted by the sender (Zenoh attachment), if any.
-    #[allow(dead_code)]
     pub filename: Option<String>,
 }
 
@@ -207,6 +206,8 @@ pub struct ZenohMessage {
     pub is_local: bool,
     /// Raw payload bytes for export (None = use payload string as UTF-8)
     pub payload_bytes: Option<Vec<u8>>,
+    /// Original filename transmitted by the sender (Zenoh attachment), if any.
+    pub filename: Option<String>,
     /// Identifies which session this message came from (publishing, monitor, or local echo)
     #[allow(dead_code)]
     pub source: MessageSource,
@@ -248,10 +249,17 @@ impl ZenohMessage {
             size_bytes: 0,
             is_local,
             payload_bytes: Some(payload_bytes),
+            filename: None,
             source,
         };
         msg.size_bytes = msg.calculate_size();
         msg
+    }
+
+    /// Attach a transmitted original filename (from a Zenoh attachment).
+    pub fn with_filename(mut self, filename: Option<String>) -> Self {
+        self.filename = filename;
+        self
     }
 }
 
@@ -282,6 +290,9 @@ pub enum ZenohCommand {
         payload: Vec<u8>, // Raw bytes
         encoding: String,
         from_import: bool, // If true, don't store payload after publish (imported files are ephemeral)
+        /// Original filename of an imported file; transmitted as a Zenoh
+        /// attachment so receivers can restore the name + extension on save.
+        filename: Option<String>,
     },
     Query {
         selector: String,

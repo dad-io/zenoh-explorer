@@ -298,7 +298,7 @@ impl ZenohExplorer {
                     PayloadEntry {
                         bytes: raw_bytes,
                         received_at: message.timestamp,
-                        filename: None,
+                        filename: message.filename.clone(),
                     },
                 );
             } else {

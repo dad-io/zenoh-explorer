@@ -236,6 +236,7 @@ impl PublishUI for ZenohExplorer {
                         payload: payload_bytes,
                         encoding: self.publish_encoding.clone(),
                         from_import, // Don't store imported files after publish
+                        filename: self.publish_payload_filename.clone(),
                     }) {
                         Ok(_) => info!(
                             "GUI: Publish command sent successfully for {} bytes",
