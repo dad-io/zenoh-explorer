@@ -61,6 +61,49 @@ fn leader_line_with_count(
     );
 }
 
+/// Inline transfer progress: bar + chunk count, ✓+size when complete,
+/// byte progress while in flight. Free fn so it can render inside closures
+/// that cannot borrow `self`.
+fn render_transfer_progress(
+    ui: &mut egui::Ui,
+    t: &TransferState,
+    dark_mode: bool,
+    secondary_color: egui::Color32,
+) {
+    let frac = t.received.len() as f32 / t.total_chunks.max(1) as f32;
+    ui.add(
+        egui::ProgressBar::new(frac)
+            .desired_width(120.0)
+            .text(format!("{}/{}", t.received.len(), t.total_chunks)),
+    );
+    if t.is_complete() {
+        ui.label(
+            RichText::new(format!("✓ {}", transfer::format_size(t.total_size)))
+                .size(TEXT_SMALL_SIZE)
+                .color(if dark_mode {
+                    ExplorerColors::DARK_SUCCESS
+                } else {
+                    ExplorerColors::SUCCESS
+                }),
+        );
+    } else {
+        ui.label(
+            RichText::new(format!(
+                "⬇ {} of {}",
+                transfer::format_size(
+                    t.received
+                        .len()
+                        .saturating_mul(crate::transfer::CHUNK_SIZE)
+                        .min(t.total_size)
+                ),
+                transfer::format_size(t.total_size)
+            ))
+            .size(TEXT_SMALL_SIZE)
+            .color(secondary_color),
+        );
+    }
+}
+
 /// Trait for topic tree and detail rendering.
 pub trait TopicTreeUI {
     fn show_tree_panel(&mut self, ui: &mut egui::Ui);
@@ -74,7 +117,6 @@ pub trait TopicTreeUI {
         parent_path: String,
         depth: usize,
     );
-    fn show_transfer_progress(&self, ui: &mut egui::Ui, t: &TransferState);
 }
 
 impl TopicTreeUI for ZenohExplorer {
@@ -575,7 +617,9 @@ impl TopicTreeUI for ZenohExplorer {
                 }
 
                 if let Some(t) = &node.transfer {
-                    self.show_transfer_progress(ui, t);
+                    let dark_mode = self.dark_mode;
+                    let secondary_color = self.text_secondary_color();
+                    render_transfer_progress(ui, t, dark_mode, secondary_color);
                 }
 
                 // Show preview of last value (before leader line so count sits at right edge)
@@ -619,26 +663,9 @@ impl TopicTreeUI for ZenohExplorer {
             let tertiary = self.text_tertiary_color();
             let cumulative_leaves = node.cumulative_leaves;
 
-            // Extract transfer state values before the header closure to avoid borrow conflicts:
+            // Clone the transfer state before the header closure to avoid borrow conflicts:
             // show_header takes a FnOnce(&mut Ui) which prevents calling &self methods inside.
-            let transfer_snapshot = node.transfer.as_ref().map(|t| {
-                let frac = t.received.len() as f32 / t.total_chunks.max(1) as f32;
-                let received = t.received.len();
-                let total_chunks = t.total_chunks;
-                let total_size = t.total_size;
-                let complete = t.is_complete();
-                let bytes_received = received
-                    .saturating_mul(crate::transfer::CHUNK_SIZE)
-                    .min(total_size);
-                (
-                    frac,
-                    received,
-                    total_chunks,
-                    total_size,
-                    complete,
-                    bytes_received,
-                )
-            });
+            let transfer_snapshot: Option<TransferState> = node.transfer.clone();
             let dark_mode = self.dark_mode;
             let secondary_color = self.text_secondary_color();
 
@@ -678,41 +705,8 @@ impl TopicTreeUI for ZenohExplorer {
                     }
 
                     // Show transfer progress inline if this branch-topic is receiving chunks
-                    if let Some((
-                        frac,
-                        received,
-                        total_chunks,
-                        total_size,
-                        complete,
-                        bytes_received,
-                    )) = transfer_snapshot
-                    {
-                        ui.add(
-                            egui::ProgressBar::new(frac)
-                                .desired_width(120.0)
-                                .text(format!("{}/{}", received, total_chunks)),
-                        );
-                        if complete {
-                            ui.label(
-                                RichText::new(format!("✓ {}", transfer::format_size(total_size)))
-                                    .size(TEXT_SMALL_SIZE)
-                                    .color(if dark_mode {
-                                        ExplorerColors::DARK_SUCCESS
-                                    } else {
-                                        ExplorerColors::SUCCESS
-                                    }),
-                            );
-                        } else {
-                            ui.label(
-                                RichText::new(format!(
-                                    "⬇ {} of {}",
-                                    transfer::format_size(bytes_received),
-                                    transfer::format_size(total_size)
-                                ))
-                                .size(TEXT_SMALL_SIZE)
-                                .color(secondary_color),
-                            );
-                        }
+                    if let Some(ref t) = transfer_snapshot {
+                        render_transfer_progress(ui, t, dark_mode, secondary_color);
                     }
 
                     // Show descendant leaf count with leader line
@@ -725,43 +719,6 @@ impl TopicTreeUI for ZenohExplorer {
                     self.show_tree_node(ui, child, full_path.clone(), depth + 1);
                 }
             });
-        }
-    }
-
-    /// Inline transfer progress: bar + chunk count, ✓+size when complete,
-    /// byte progress while in flight.
-    fn show_transfer_progress(&self, ui: &mut egui::Ui, t: &TransferState) {
-        let frac = t.received.len() as f32 / t.total_chunks.max(1) as f32;
-        ui.add(
-            egui::ProgressBar::new(frac)
-                .desired_width(120.0)
-                .text(format!("{}/{}", t.received.len(), t.total_chunks)),
-        );
-        if t.is_complete() {
-            ui.label(
-                RichText::new(format!("✓ {}", transfer::format_size(t.total_size)))
-                    .size(TEXT_SMALL_SIZE)
-                    .color(if self.dark_mode {
-                        ExplorerColors::DARK_SUCCESS
-                    } else {
-                        ExplorerColors::SUCCESS
-                    }),
-            );
-        } else {
-            ui.label(
-                RichText::new(format!(
-                    "⬇ {} of {}",
-                    transfer::format_size(
-                        t.received
-                            .len()
-                            .saturating_mul(crate::transfer::CHUNK_SIZE)
-                            .min(t.total_size)
-                    ),
-                    transfer::format_size(t.total_size)
-                ))
-                .size(TEXT_SMALL_SIZE)
-                .color(self.text_secondary_color()),
-            );
         }
     }
 }
