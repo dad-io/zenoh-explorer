@@ -1296,12 +1296,12 @@ mod tests {
 
     #[test]
     fn leaf_icons_bucket_correctly() {
-        assert_eq!(leaf_icon("@/session/x", None, None), "⚙");
-        assert_eq!(leaf_icon("demo/t", Some("application/json"), None), "📊");
-        assert_eq!(leaf_icon("demo/t", Some("text/plain"), Some("hello")), "📊");
-        assert_eq!(leaf_icon("demo/t", Some("application/octet-stream"), None), "📦");
-        assert_eq!(leaf_icon("demo/t", None, Some("[binary 1024 bytes] ff 00")), "📦");
-        assert_eq!(leaf_icon("demo/t", None, None), "📦");
+        assert_eq!(leaf_icon("@/session/x", None, None), "🛠");
+        assert_eq!(leaf_icon("demo/t", Some("application/json"), None), "🏷");
+        assert_eq!(leaf_icon("demo/t", Some("text/plain"), Some("hello")), "🏷");
+        assert_eq!(leaf_icon("demo/t", Some("application/octet-stream"), None), "💾");
+        assert_eq!(leaf_icon("demo/t", None, Some("[binary 1024 bytes] ff 00")), "💾");
+        assert_eq!(leaf_icon("demo/t", None, None), "💾");
     }
 }
 ```
@@ -1311,53 +1311,63 @@ mod tests {
 - [ ] **Step 3: Implement** (free fn in topic_tree.rs):
 
 ```rust
-/// Icon bucket for leaf topics: ⚙ system (@/ admin space), 📊 text/JSON,
-/// 📦 binary/unknown. Prefers the declared encoding, falls back to the
-/// payload preview heuristic (binary previews start with "[binary").
+/// Icon bucket for leaf topics — zenoh/embedded/automation themed:
+/// 🛠 system (@/ zenoh admin space), 🏷 text/JSON (live KV telemetry),
+/// 💾 binary/unknown (firmware/blobs). Prefers the declared encoding, falls
+/// back to the payload preview heuristic (binary previews start with "[binary").
 pub(crate) fn leaf_icon(
     full_path: &str,
     encoding: Option<&str>,
     last_payload: Option<&str>,
 ) -> &'static str {
     if full_path.starts_with('@') {
-        return "⚙";
+        return "🛠";
     }
     if let Some(enc) = encoding {
         let e = enc.to_ascii_lowercase();
         if e.contains("json") || e.starts_with("text/") {
-            return "📊";
+            return "🏷";
         }
         if e.contains("octet-stream") {
-            return "📦";
+            return "💾";
         }
     }
     match last_payload {
-        Some(p) if p.starts_with("[binary") => "📦",
-        Some(_) => "📊",
-        None => "📦",
+        Some(p) if p.starts_with("[binary") => "💾",
+        Some(_) => "🏷",
+        None => "💾",
     }
 }
 ```
 
 - [ ] **Step 4: Wire into rendering:**
-- Leaf rows (topic_tree.rs:489): `format!("📄 {}", node.key)` becomes:
+- Leaf rows (topic_tree.rs:489): `format!("📄 {}", node.key)` becomes (transfer
+  nodes get the incoming-transfer icon):
 
 ```rust
-                let icon = leaf_icon(
-                    &full_path,
-                    node.last_encoding.as_deref(),
-                    node.last_payload.as_deref(),
-                );
+                let icon = if node.transfer.is_some() {
+                    "📥"
+                } else {
+                    leaf_icon(
+                        &full_path,
+                        node.last_encoding.as_deref(),
+                        node.last_payload.as_deref(),
+                    )
+                };
                 let response = ui.selectable_label(is_selected, format!("{} {}", icon, node.key));
 ```
 
 - Branch rows (topic_tree.rs:556): `format!("📁 {}", node.key)` becomes:
 
 ```rust
-                    let icon = if depth == 0 { "🗄" } else { "📁" };
+                    let icon = if depth == 0 { "🌐" } else { "📡" };
                     let response =
                         ui.selectable_label(is_selected, format!("{} {}", icon, node.key));
 ```
+
+- Glyph check (manual): run the app once; if any icon renders as a tofu box in
+  egui's emoji font, substitute per-icon fallbacks: 🌐→🛰→🌍, 📡→🗼, 💾→🤖,
+  🏷→📟, 🛠→🔧, 📥→⬇ (update the tests to match whatever ships).
 
 - [ ] **Step 5: Run + verify** — `cargo test && cargo clippy -- -D warnings`; `cargo run` to eyeball icons.
 

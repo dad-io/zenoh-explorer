@@ -153,13 +153,20 @@ never restores.)
 
 ### 2d. Icon system
 
+Icons are deliberately NOT the i3X-Explorer set (user request 2026-06-09):
+they lean zenoh / robotics / embedded / realtime-KV / physical automation.
+
 | Icon | Applies to |
 | ---- | ---------- |
-| 🗄️ | Top-level root nodes (depth 0) |
-| 📁 | Branch nodes |
-| 📦 | Binary-payload leaves |
-| 📊 | Text/JSON leaves |
-| ⚙️ | System topics (`@/...` zenoh admin space) and transfer nodes |
+| 🌐 | Top-level root nodes (network namespaces, depth 0) |
+| 📡 | Branch nodes (gateways/hubs aggregating topics) |
+| 💾 | Binary-payload leaves (firmware/blobs) |
+| 🏷 | Text/JSON leaves (live key-value telemetry) |
+| 🛠 | System topics (`@/...` zenoh admin space) |
+| 📥 | Transfer nodes (incoming chunked file transfer) |
+
+If a glyph renders as a tofu box in egui's emoji font, fall back per-icon:
+🌐→🛰→🌍, 📡→🗼, 💾→🤖, 🏷→📟, 🛠→🔧, 📥→⬇.
 
 Leaf bucketing prefers the message encoding, falling back to a payload
 heuristic (valid UTF-8 → text). Chevron accuracy needs no resolver here:
