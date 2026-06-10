@@ -19,11 +19,11 @@ pub const PAYLOAD_PREVIEW_SIZE: usize = 10 * 1024;
 pub const MAX_UI_DISPLAY_SIZE: usize = 50 * 1024;
 
 // Font sizes
-pub const HEADING_LARGE_SIZE: f32 = 24.0;      // Main app title
-pub const HEADING_MEDIUM_SIZE: f32 = 18.0;     // Section headings
-pub const TEXT_SMALL_SIZE: f32 = 13.0;         // Secondary info
+pub const HEADING_LARGE_SIZE: f32 = 24.0; // Main app title
+pub const HEADING_MEDIUM_SIZE: f32 = 18.0; // Section headings
+pub const TEXT_SMALL_SIZE: f32 = 13.0; // Secondary info
 pub const TOPIC_PREVIEW_TEXT_SIZE: f32 = 13.0; // Topic preview in tree
-pub const SUBSCRIPTION_TEXT_SIZE: f32 = 13.0;  // Subscription list items
+pub const SUBSCRIPTION_TEXT_SIZE: f32 = 13.0; // Subscription list items
 
 // ── Helper functions ─────────────────────────────────────────────────────────
 
@@ -44,6 +44,22 @@ pub fn safe_truncate_index(s: &str, max_len: usize) -> usize {
 
 // ── Data structures ──────────────────────────────────────────────────────────
 
+/// In-flight or completed chunked file transfer, tracked on the parent topic node.
+#[derive(Debug, Clone)]
+pub struct TransferState {
+    pub total_size: usize,
+    pub total_chunks: usize,
+    pub received: std::collections::HashSet<usize>,
+    pub last_update: Instant,
+}
+
+impl TransferState {
+    /// Returns true when all chunks have been received.
+    pub fn is_complete(&self) -> bool {
+        self.received.len() == self.total_chunks
+    }
+}
+
 /// Represents a node in the hierarchical browse tree.
 /// Each node can have children (forming a tree structure) and maintains
 /// metadata about the last received message for that key path.
@@ -55,7 +71,11 @@ pub struct ZenohNode {
     pub message_count: usize,
     pub last_payload: Option<String>,
     pub last_encoding: Option<String>,
-    pub is_local: bool,  // True if this key was published from this app instance
+    pub is_local: bool, // True if this key was published from this app instance
+    /// Number of leaf nodes in the subtree rooted at this node (self counts as 1 when childless).
+    pub cumulative_leaves: usize,
+    /// In-flight or completed chunked transfer state for this topic node.
+    pub transfer: Option<TransferState>,
 }
 
 impl ZenohNode {
@@ -69,7 +89,44 @@ impl ZenohNode {
             last_payload: None,
             last_encoding: None,
             is_local: false,
+            cumulative_leaves: 1, // Every node starts as its own leaf
+            transfer: None,
         }
+    }
+
+    /// Insert a key path, creating nodes as needed, and return the leaf node.
+    /// Maintains `cumulative_leaves` (count of leaf nodes in each subtree)
+    /// incrementally: ancestors gain +1 only when a genuinely new leaf is
+    /// attached under a node that already had children. (A leaf converting to
+    /// a branch keeps subtree leaf-count unchanged: itself out, new leaf in.)
+    pub fn insert_path(&mut self, key: &str) -> &mut ZenohNode {
+        let parts: Vec<&str> = key.split('/').filter(|p| !p.is_empty()).collect();
+
+        // Find the first missing segment and whether its parent had children.
+        let mut probe: &ZenohNode = self;
+        let mut divergence: Option<usize> = None;
+        for (i, part) in parts.iter().enumerate() {
+            match probe.children.get(*part) {
+                Some(child) => probe = child,
+                None => {
+                    divergence = Some(i);
+                    break;
+                }
+            }
+        }
+        let bump = divergence.is_some() && !probe.children.is_empty();
+
+        let mut node = self;
+        for (i, part) in parts.iter().enumerate() {
+            if bump && divergence.is_some_and(|d| i <= d) {
+                node.cumulative_leaves += 1;
+            }
+            node = node
+                .children
+                .entry(part.to_string())
+                .or_insert_with(|| ZenohNode::new(part.to_string()));
+        }
+        node
     }
 
     /// Updates the node with new message data.
@@ -84,7 +141,43 @@ impl ZenohNode {
             self.is_local = true;
         }
     }
+
+    /// Record a received chunk on the parent topic's node (no __chunk subtree
+    /// is materialized). A chunk from a different (size, chunks) generation
+    /// resets the transfer state.
+    pub fn record_chunk(&mut self, topic: &str, meta: crate::transfer::ChunkMeta) {
+        let node = self.insert_path(topic);
+        let stale = node.transfer.as_ref().is_some_and(|t| {
+            (t.total_size, t.total_chunks) != (meta.total_size, meta.total_chunks)
+        });
+        if stale || node.transfer.is_none() {
+            node.transfer = Some(TransferState {
+                total_size: meta.total_size,
+                total_chunks: meta.total_chunks,
+                received: Default::default(),
+                last_update: Instant::now(),
+            });
+        }
+        let t = node.transfer.as_mut().expect("just ensured");
+        t.received.insert(meta.index);
+        t.last_update = Instant::now();
+        node.last_seen = Instant::now();
+    }
 }
+
+/// A stored payload: full raw bytes plus receive metadata.
+#[derive(Debug, Clone)]
+pub struct PayloadEntry {
+    pub bytes: Vec<u8>,
+    /// When this payload was received from the network.
+    #[allow(dead_code)]
+    pub received_at: DateTime<Utc>,
+    /// Original filename transmitted by the sender (Zenoh attachment), if any.
+    pub filename: Option<String>,
+}
+
+/// The export store map. Keyed by full topic (or chunk) key.
+pub type PayloadStoreMap = std::collections::HashMap<String, PayloadEntry>;
 
 /// Manages the lifecycle of an active Zenoh subscription.
 /// Includes the async task handle and a cancellation mechanism for clean shutdown.
@@ -113,6 +206,8 @@ pub struct ZenohMessage {
     pub is_local: bool,
     /// Raw payload bytes for export (None = use payload string as UTF-8)
     pub payload_bytes: Option<Vec<u8>>,
+    /// Original filename transmitted by the sender (Zenoh attachment), if any.
+    pub filename: Option<String>,
     /// Identifies which session this message came from (publishing, monitor, or local echo)
     #[allow(dead_code)]
     pub source: MessageSource,
@@ -154,10 +249,17 @@ impl ZenohMessage {
             size_bytes: 0,
             is_local,
             payload_bytes: Some(payload_bytes),
+            filename: None,
             source,
         };
         msg.size_bytes = msg.calculate_size();
         msg
+    }
+
+    /// Attach a transmitted original filename (from a Zenoh attachment).
+    pub fn with_filename(mut self, filename: Option<String>) -> Self {
+        self.filename = filename;
+        self
     }
 }
 
@@ -168,7 +270,7 @@ impl ZenohMessage {
 pub enum ZenohCommand {
     Connect {
         locators: String,
-        listen_port: String,  // Port to listen on in peer mode
+        listen_port: String, // Port to listen on in peer mode
         mode: String,
         config_json: String,
     },
@@ -188,6 +290,9 @@ pub enum ZenohCommand {
         payload: Vec<u8>, // Raw bytes
         encoding: String,
         from_import: bool, // If true, don't store payload after publish (imported files are ephemeral)
+        /// Original filename of an imported file; transmitted as a Zenoh
+        /// attachment so receivers can restore the name + extension on save.
+        filename: Option<String>,
     },
     Query {
         selector: String,
@@ -235,8 +340,7 @@ pub enum ZenohEvent {
 
 /// Types of messages that can flow through the Zenoh network.
 /// Each type has associated colors and labels for UI display.
-#[derive(Debug, Clone)]
-#[derive(PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum MessageType {
     Subscribe,
     Publish,
@@ -318,7 +422,9 @@ impl ConnectionStatus {
     pub fn color(&self) -> Color32 {
         match self {
             ConnectionStatus::Connected => ExplorerColors::SUCCESS,
-            ConnectionStatus::ConnectingPublishing | ConnectionStatus::ConnectingMonitor => ExplorerColors::WARNING,
+            ConnectionStatus::ConnectingPublishing | ConnectionStatus::ConnectingMonitor => {
+                ExplorerColors::WARNING
+            }
             ConnectionStatus::Disconnected | ConnectionStatus::Error(_) => ExplorerColors::ERROR,
         }
     }
@@ -331,6 +437,55 @@ impl ConnectionStatus {
             ConnectionStatus::Disconnected => "Disconnected",
             ConnectionStatus::Error(_) => "Error",
         }
+    }
+}
+
+/// Content-based message deduplication over a sliding time window.
+///
+/// Hashes the FULL payload (seahash) so payloads differing anywhere are never
+/// conflated. Checking and recording are separate so a message dropped after
+/// the check (e.g. by the rate limiter) doesn't poison its own retransmit.
+pub struct Deduper {
+    hashes: std::collections::HashMap<u64, Instant>,
+    last_sweep: Instant,
+    pub ttl: Duration,
+    pub enabled: bool,
+}
+
+impl Deduper {
+    pub fn new(ttl: Duration) -> Self {
+        Self {
+            hashes: Default::default(),
+            last_sweep: Instant::now(),
+            ttl,
+            enabled: true,
+        }
+    }
+
+    pub fn hash_message(key: &str, payload: &[u8]) -> u64 {
+        use std::hash::Hasher;
+        let mut h = seahash::SeaHasher::new();
+        h.write(key.as_bytes());
+        h.write(&[0xff]); // separator: ("ab", "c") must differ from ("a", "bc")
+        h.write(payload);
+        h.finish()
+    }
+
+    /// True if this hash was recorded within the TTL. Does NOT record.
+    pub fn seen_recently(&mut self, hash: u64) -> bool {
+        if self.last_sweep.elapsed() > self.ttl {
+            let ttl = self.ttl;
+            self.hashes.retain(|_, t| t.elapsed() < ttl);
+            self.last_sweep = Instant::now();
+        }
+        self.hashes
+            .get(&hash)
+            .is_some_and(|t| t.elapsed() < self.ttl)
+    }
+
+    /// Record a hash as seen now. Call only after the message is accepted.
+    pub fn record(&mut self, hash: u64) {
+        self.hashes.insert(hash, Instant::now());
     }
 }
 
@@ -366,5 +521,167 @@ impl RateLimiter {
         } else {
             false // Rate limit exceeded
         }
+    }
+}
+
+/// One walk over the tree computing the set of node paths visible under a
+/// (lowercased) substring filter. A node is visible if its full path matches
+/// or any descendant's does; since child paths contain the parent path as a
+/// prefix, a matching branch automatically keeps its whole subtree visible.
+pub fn compute_visible_paths(
+    root: &ZenohNode,
+    filter_lower: &str,
+) -> std::collections::HashSet<String> {
+    fn walk(
+        node: &ZenohNode,
+        path: &str,
+        filter: &str,
+        out: &mut std::collections::HashSet<String>,
+    ) -> bool {
+        let mut visible = path.to_lowercase().contains(filter);
+        for (key, child) in &node.children {
+            let child_path = format!("{}/{}", path, key);
+            if walk(child, &child_path, filter, out) {
+                visible = true;
+            }
+        }
+        if visible {
+            out.insert(path.to_string());
+        }
+        visible
+    }
+
+    let mut out = std::collections::HashSet::new();
+    for (key, child) in &root.children {
+        walk(child, key, filter_lower, &mut out);
+    }
+    out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn dedup_same_content_within_window() {
+        let mut d = Deduper::new(Duration::from_secs(60));
+        let h = Deduper::hash_message("k", b"payload");
+        assert!(!d.seen_recently(h));
+        d.record(h);
+        assert!(d.seen_recently(h));
+    }
+
+    #[test]
+    fn dedup_differs_when_middle_bytes_differ() {
+        // Two 16KB payloads: same first/last 4KB, different middle.
+        let mut a = vec![0u8; 16 * 1024];
+        let mut b = vec![0u8; 16 * 1024];
+        a[8000] = 1;
+        b[8000] = 2;
+        assert_ne!(
+            Deduper::hash_message("k", &a),
+            Deduper::hash_message("k", &b)
+        );
+    }
+
+    #[test]
+    fn dedup_unrecorded_hash_not_seen() {
+        // A hash that was checked but never recorded (e.g. rate-limited drop)
+        // must not poison the retransmit.
+        let mut d = Deduper::new(Duration::from_secs(60));
+        let h = Deduper::hash_message("k", b"x");
+        assert!(!d.seen_recently(h));
+        assert!(!d.seen_recently(h)); // still unseen — check alone records nothing
+    }
+
+    #[test]
+    fn dedup_expires_after_ttl() {
+        let mut d = Deduper::new(Duration::from_millis(1));
+        let h = Deduper::hash_message("k", b"x");
+        d.record(h);
+        std::thread::sleep(Duration::from_millis(5));
+        assert!(!d.seen_recently(h));
+    }
+
+    #[test]
+    fn insert_path_counts_leaves() {
+        let mut root = ZenohNode::new("root".into());
+        root.insert_path("a/b");
+        root.insert_path("a/c");
+        root.insert_path("d");
+        assert_eq!(root.cumulative_leaves, 3);
+        assert_eq!(root.children["a"].cumulative_leaves, 2);
+        // repeat message to existing leaf: no change
+        root.insert_path("a/b");
+        assert_eq!(root.cumulative_leaves, 3);
+    }
+
+    #[test]
+    fn insert_path_leaf_to_branch_conversion() {
+        let mut root = ZenohNode::new("root".into());
+        root.insert_path("a");
+        root.insert_path("x");
+        assert_eq!(root.cumulative_leaves, 2);
+        // "a" stops being a leaf; "a/b" becomes the leaf — net zero above "a"
+        root.insert_path("a/b");
+        assert_eq!(root.cumulative_leaves, 2);
+        assert_eq!(root.children["a"].cumulative_leaves, 1);
+    }
+
+    #[test]
+    fn insert_path_returns_leaf_node() {
+        let mut root = ZenohNode::new("root".into());
+        let leaf = root.insert_path("x/y/z");
+        assert_eq!(leaf.key, "z");
+        // empty segments are skipped
+        let leaf2 = root.insert_path("x//y/z");
+        assert_eq!(leaf2.key, "z");
+        assert_eq!(root.cumulative_leaves, 1);
+    }
+
+    #[test]
+    fn visible_paths_includes_ancestors_case_insensitive() {
+        let mut root = ZenohNode::new("root".into());
+        root.insert_path("demo/Sensors/Temp1");
+        root.insert_path("demo/other");
+        root.insert_path("unrelated/x");
+        let v = compute_visible_paths(&root, "temp");
+        assert!(v.contains("demo"));
+        assert!(v.contains("demo/Sensors"));
+        assert!(v.contains("demo/Sensors/Temp1"));
+        assert!(!v.contains("demo/other"));
+        assert!(!v.contains("unrelated"));
+    }
+
+    #[test]
+    fn visible_paths_branch_match_keeps_descendants() {
+        let mut root = ZenohNode::new("root".into());
+        root.insert_path("demo/a/b");
+        // "demo" matches; descendants' full paths contain "demo" so they're visible too
+        let v = compute_visible_paths(&root, "demo");
+        assert!(v.contains("demo") && v.contains("demo/a") && v.contains("demo/a/b"));
+    }
+
+    #[test]
+    fn transfer_state_resets_on_new_generation() {
+        let mut root = ZenohNode::new("root".into());
+        let meta_a = crate::transfer::ChunkMeta {
+            total_size: 100,
+            total_chunks: 2,
+            index: 0,
+        };
+        let meta_b = crate::transfer::ChunkMeta {
+            total_size: 200,
+            total_chunks: 3,
+            index: 1,
+        };
+        root.record_chunk("t", meta_a);
+        root.record_chunk("t", crate::transfer::ChunkMeta { index: 1, ..meta_a });
+        assert!(root.children["t"].transfer.as_ref().unwrap().is_complete());
+        root.record_chunk("t", meta_b); // new generation resets
+        let t = root.children["t"].transfer.as_ref().unwrap();
+        assert_eq!((t.total_chunks, t.received.len()), (3, 1));
+        // no __chunk children materialized
+        assert!(root.children["t"].children.is_empty());
     }
 }

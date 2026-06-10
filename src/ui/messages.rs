@@ -2,8 +2,8 @@
 
 use egui::{Color32, RichText};
 
-use crate::types::*;
 use crate::app::ZenohExplorer;
+use crate::types::*;
 
 /// Trait for messages tab rendering.
 pub trait MessagesUI {
@@ -57,7 +57,7 @@ impl MessagesUI for ZenohExplorer {
                 }
             }
 
-            ui.checkbox(&mut self.dedup_enabled, "Dedup");
+            ui.checkbox(&mut self.deduper.enabled, "Dedup");
             if self.messages_deduped > 0 {
                 ui.label(
                     RichText::new(format!("({} deduped)", self.messages_deduped))
@@ -94,11 +94,9 @@ impl MessagesUI for ZenohExplorer {
 
                             // Timestamp
                             ui.label(
-                                RichText::new(
-                                    message.timestamp.format("%H:%M:%S%.3f").to_string(),
-                                )
-                                .color(self.text_secondary_color())
-                                .size(TEXT_SMALL_SIZE),
+                                RichText::new(message.timestamp.format("%H:%M:%S%.3f").to_string())
+                                    .color(self.text_secondary_color())
+                                    .size(TEXT_SMALL_SIZE),
                             );
 
                             // Key

@@ -52,15 +52,14 @@ pub struct ZenohExplorer {
     pub(crate) message_filter: String,
     pub(crate) auto_scroll: bool,
     pub(crate) query_alert: Option<String>,
+    pub(crate) ui_alert: Option<String>,
     pub(crate) messages_dropped: usize,
     pub(crate) rate_limiter: RateLimiter,
     pub(crate) rate_limit_drops: usize,
     pub(crate) memory_warning_shown: bool,
     pub(crate) last_health_check: Instant,
     pub(crate) worker_healthy: bool,
-    pub(crate) message_hashes: HashMap<u64, Instant>,
-    pub(crate) dedup_ttl: Duration,
-    pub(crate) dedup_enabled: bool,
+    pub(crate) deduper: Deduper,
     pub(crate) messages_deduped: usize,
     #[allow(dead_code)]
     pub(crate) local_kvstore: Arc<RwLock<HashMap<String, (String, String)>>>,
@@ -69,8 +68,13 @@ pub struct ZenohExplorer {
     pub(crate) paused_keys: std::collections::HashSet<String>,
     pub(crate) json_parse_cache: std::collections::HashMap<u64, Option<String>>,
     pub(crate) expanded_payloads: std::collections::HashSet<String>,
-    #[allow(clippy::type_complexity)]
-    pub(crate) payload_store: Arc<RwLock<HashMap<String, (Vec<u8>, chrono::DateTime<chrono::Utc>)>>>,
+    pub(crate) payload_store: Arc<RwLock<PayloadStoreMap>>,
+    /// Monotonic counter incremented whenever the browse tree changes; used by
+    /// the filter cache to detect staleness.
+    pub(crate) tree_version: u64,
+    /// Cache for the visible-path set: (lowercased filter, tree_version, visible set).
+    /// Populated and read by filter rendering; stored here so it survives frames.
+    pub(crate) tree_filter_cache: Option<(String, u64, std::collections::HashSet<String>)>,
 }
 
 impl Default for ZenohExplorer {
@@ -146,15 +150,14 @@ impl ZenohExplorer {
             message_filter: String::new(),
             auto_scroll: true,
             query_alert: None,
+            ui_alert: None,
             messages_dropped: 0,
             rate_limiter: RateLimiter::new(1000),
             rate_limit_drops: 0,
             memory_warning_shown: false,
             last_health_check: Instant::now(),
             worker_healthy: true,
-            message_hashes: HashMap::new(),
-            dedup_ttl: Duration::from_secs(60),
-            dedup_enabled: true,
+            deduper: Deduper::new(Duration::from_secs(60)),
             messages_deduped: 0,
             local_kvstore: Arc::new(RwLock::new(HashMap::new())),
             queryable_enabled: false,
@@ -163,6 +166,8 @@ impl ZenohExplorer {
             json_parse_cache: std::collections::HashMap::new(),
             expanded_payloads: std::collections::HashSet::new(),
             payload_store: Arc::new(RwLock::new(HashMap::new())),
+            tree_version: 0,
+            tree_filter_cache: None,
         }
     }
 
@@ -202,8 +207,7 @@ impl ZenohExplorer {
                 style.visuals.widgets.hovered.fg_stroke.color = ExplorerColors::DARK_TEXT_PRIMARY;
                 style.visuals.widgets.active.fg_stroke.color = ExplorerColors::DARK_TEXT_PRIMARY;
 
-                style.visuals.widgets.noninteractive.bg_fill =
-                    ExplorerColors::DARK_CARD_BACKGROUND;
+                style.visuals.widgets.noninteractive.bg_fill = ExplorerColors::DARK_CARD_BACKGROUND;
                 style.visuals.widgets.noninteractive.fg_stroke.color =
                     ExplorerColors::DARK_TEXT_PRIMARY;
 
@@ -624,6 +628,31 @@ impl eframe::App for ZenohExplorer {
                 }
 
                 ui.separator();
+
+                // Global alert banner (export errors, warnings) — visible on every tab
+                if let Some(alert_text) = self.ui_alert.clone() {
+                    egui::TopBottomPanel::top("alert_banner").show_inside(ui, |ui| {
+                        ui.horizontal(|ui| {
+                            let is_success = alert_text.starts_with('✓');
+                            let (text, color) = if is_success {
+                                (
+                                    alert_text.clone(),
+                                    if self.dark_mode {
+                                        ExplorerColors::DARK_SUCCESS
+                                    } else {
+                                        ExplorerColors::SUCCESS
+                                    },
+                                )
+                            } else {
+                                (format!("⚠ {}", alert_text), ExplorerColors::WARNING)
+                            };
+                            ui.label(RichText::new(text).color(color));
+                            if ui.small_button("✖").clicked() {
+                                self.ui_alert = None;
+                            }
+                        });
+                    });
+                }
 
                 // Main split-panel layout
                 egui::TopBottomPanel::top("toolbar").show_inside(ui, |ui| {

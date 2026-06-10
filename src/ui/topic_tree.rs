@@ -2,14 +2,107 @@
 
 use egui::RichText;
 
+use crate::app::ZenohExplorer;
 use crate::colors::ExplorerColors;
+use crate::transfer;
 use crate::types::*;
 use crate::ui::help::HelpUI;
 use crate::ui::messages::MessagesUI;
 use crate::ui::publish::PublishUI;
 use crate::ui::query::QueryUI;
-use crate::app::ZenohExplorer;
-use crate::transfer;
+
+/// Draw a leader line (dashed when collapsed, solid when expanded) filling the
+/// space between the label and a right-aligned tabular count.
+fn leader_line_with_count(
+    ui: &mut egui::Ui,
+    expanded: bool,
+    count: usize,
+    text_color: egui::Color32,
+) {
+    if count == 0 {
+        return;
+    }
+    let count_text = count.to_string();
+    let font = egui::FontId::proportional(TEXT_SMALL_SIZE);
+    let galley = ui
+        .painter()
+        .layout_no_wrap(count_text.clone(), font, text_color);
+    let line_w = (ui.available_width() - galley.size().x - 16.0).max(0.0);
+    let (rect, _) = ui.allocate_exact_size(
+        egui::vec2(line_w, ui.spacing().interact_size.y),
+        egui::Sense::hover(),
+    );
+    let y = rect.center().y;
+    let (alpha, dashed) = if expanded { (100, false) } else { (64, true) };
+    let stroke = egui::Stroke::new(
+        1.0,
+        egui::Color32::from_rgba_unmultiplied(
+            text_color.r(),
+            text_color.g(),
+            text_color.b(),
+            alpha,
+        ),
+    );
+    let a = egui::pos2(rect.left() + 4.0, y);
+    let b = egui::pos2(rect.right() - 4.0, y);
+    if rect.width() > 12.0 {
+        if dashed {
+            for shape in egui::Shape::dashed_line(&[a, b], stroke, 3.0, 3.0) {
+                ui.painter().add(shape);
+            }
+        } else {
+            ui.painter().line_segment([a, b], stroke);
+        }
+    }
+    ui.label(
+        egui::RichText::new(count_text)
+            .size(TEXT_SMALL_SIZE)
+            .color(text_color),
+    );
+}
+
+/// Inline transfer progress: bar + chunk count, ✓+size when complete,
+/// byte progress while in flight. Free fn so it can render inside closures
+/// that cannot borrow `self`.
+fn render_transfer_progress(
+    ui: &mut egui::Ui,
+    t: &TransferState,
+    dark_mode: bool,
+    secondary_color: egui::Color32,
+) {
+    let frac = t.received.len() as f32 / t.total_chunks.max(1) as f32;
+    ui.add(
+        egui::ProgressBar::new(frac)
+            .desired_width(120.0)
+            .text(format!("{}/{}", t.received.len(), t.total_chunks)),
+    );
+    if t.is_complete() {
+        ui.label(
+            RichText::new(format!("✓ {}", transfer::format_size(t.total_size)))
+                .size(TEXT_SMALL_SIZE)
+                .color(if dark_mode {
+                    ExplorerColors::DARK_SUCCESS
+                } else {
+                    ExplorerColors::SUCCESS
+                }),
+        );
+    } else {
+        ui.label(
+            RichText::new(format!(
+                "⬇ {} of {}",
+                transfer::format_size(
+                    t.received
+                        .len()
+                        .saturating_mul(crate::transfer::CHUNK_SIZE)
+                        .min(t.total_size)
+                ),
+                transfer::format_size(t.total_size)
+            ))
+            .size(TEXT_SMALL_SIZE)
+            .color(secondary_color),
+        );
+    }
+}
 
 /// Trait for topic tree and detail rendering.
 pub trait TopicTreeUI {
@@ -24,7 +117,7 @@ pub trait TopicTreeUI {
         parent_path: String,
         depth: usize,
     );
-    fn has_matching_descendant(&self, node: &ZenohNode, filter: &str, current_path: &str) -> bool;
+    fn save_topic_to_file(&mut self, topic: &str);
 }
 
 impl TopicTreeUI for ZenohExplorer {
@@ -78,8 +171,7 @@ impl TopicTreeUI for ZenohExplorer {
                     for subscription in &self.subscriptions {
                         ui.horizontal(|ui| {
                             ui.label(
-                                RichText::new(&subscription.key_expr)
-                                    .size(SUBSCRIPTION_TEXT_SIZE),
+                                RichText::new(&subscription.key_expr).size(SUBSCRIPTION_TEXT_SIZE),
                             );
                             if ui.small_button("✖").clicked() {
                                 if let Some(sender) = &self.command_sender {
@@ -105,6 +197,21 @@ impl TopicTreeUI for ZenohExplorer {
                 ZenohNode::new("root".to_string())
             };
 
+            let filter_lower = self.tree_filter.to_lowercase();
+            if !filter_lower.is_empty() {
+                let stale = self
+                    .tree_filter_cache
+                    .as_ref()
+                    .is_none_or(|(q, v, _)| *q != filter_lower || *v != self.tree_version);
+                if stale {
+                    let visible = compute_visible_paths(&tree_clone, &filter_lower);
+                    self.tree_filter_cache =
+                        Some((filter_lower.clone(), self.tree_version, visible));
+                }
+            } else {
+                self.tree_filter_cache = None;
+            }
+
             egui::ScrollArea::vertical()
                 .auto_shrink([false; 2])
                 .show(ui, |ui| {
@@ -126,17 +233,29 @@ impl TopicTreeUI for ZenohExplorer {
                             );
                             ui.add_space(4.0);
                             ui.label(
-                                RichText::new(
-                                    "💡 Try demo/** or sensor/* in the Subscribe tab",
-                                )
-                                .size(TEXT_SMALL_SIZE)
-                                .color(self.text_tertiary_color()),
+                                RichText::new("💡 Try demo/** or sensor/* in the Subscribe tab")
+                                    .size(TEXT_SMALL_SIZE)
+                                    .color(self.text_tertiary_color()),
                             );
                             ui.add_space(32.0);
                         });
                     } else {
                         for child in tree_clone.children.values() {
                             self.show_tree_node(ui, child, String::new(), 0);
+                        }
+                        if self
+                            .tree_filter_cache
+                            .as_ref()
+                            .is_some_and(|(_, _, v)| v.is_empty())
+                        {
+                            ui.vertical_centered(|ui| {
+                                ui.add_space(16.0);
+                                ui.label(
+                                    egui::RichText::new("No topics match the filter")
+                                        .italics()
+                                        .color(self.text_secondary_color()),
+                                );
+                            });
                         }
                     }
                 });
@@ -158,21 +277,52 @@ impl TopicTreeUI for ZenohExplorer {
         if let Some(ref topic) = self.selected_topic.clone() {
             ui.heading(topic);
 
-            // Action buttons: Export and Pause/Resume
+            // Action buttons: Save and Pause/Resume
             ui.horizontal(|ui| {
-                // Export button with subtle styling
-                // NOTE: Exports FULL payload from payload_store (not truncated tree/UI version)
-                // For chunked payloads, reassembles chunks from topic/__chunk/...
-                if ui
-                    .button("Export Payload")
-                    .on_hover_text("Save full payload to file (original size)")
-                    .clicked()
-                {
-                    if let Some(payload) =
-                        transfer::get_payload_for_export(&self.payload_store, topic)
-                    {
-                        transfer::export_payload_to_file(topic, &payload);
+                // Save availability: direct payload or a complete chunk set
+                let (saveable, size, reason) = {
+                    let store = self.payload_store.read().ok();
+                    let direct = store
+                        .as_ref()
+                        .and_then(|s| s.get(topic.as_str()))
+                        .map(|e| e.bytes.len());
+                    match direct {
+                        Some(len) => (true, Some(len), String::new()),
+                        None => match store
+                            .as_ref()
+                            .and_then(|s| transfer::chunk_progress(s, topic))
+                        {
+                            Some(p) if p.received == p.total_chunks => {
+                                (true, Some(p.total_size), String::new())
+                            }
+                            Some(p) => (
+                                false,
+                                None,
+                                format!("Waiting for {} more chunks", p.total_chunks - p.received),
+                            ),
+                            None => (false, None, "No payload stored yet".to_string()),
+                        },
                     }
+                };
+                let label = match size {
+                    Some(s) => format!("💾 Save File ({})", transfer::format_size(s)),
+                    None => "💾 Save File".to_string(),
+                };
+                let button = egui::Button::new(RichText::new(&label).color(egui::Color32::WHITE))
+                    .fill(if self.dark_mode {
+                        ExplorerColors::DARK_PRIMARY
+                    } else {
+                        ExplorerColors::PRIMARY
+                    });
+                let response = ui.add_enabled(saveable, button);
+                let response = if saveable {
+                    response.on_hover_text("Save full payload to file (original size)")
+                } else {
+                    response.on_disabled_hover_text(reason)
+                };
+                if response.clicked() {
+                    let topic_owned = topic.clone();
+                    self.save_topic_to_file(&topic_owned);
                 }
 
                 // Pause/Resume button with animated indicator
@@ -235,10 +385,15 @@ impl TopicTreeUI for ZenohExplorer {
             });
 
             // Check for chunked payload and show info
-            let chunk_info = transfer::get_chunk_info(&self.payload_store, topic);
+            let chunk_info = self
+                .payload_store
+                .read()
+                .ok()
+                .and_then(|store| transfer::chunk_progress(&store, topic));
 
             // Display chunk info if this is a chunked payload
-            if let Some((received, total, total_size)) = chunk_info {
+            if let Some(p) = chunk_info {
+                let (received, total, total_size) = (p.received, p.total_chunks, p.total_size);
                 ui.horizontal(|ui| {
                     ui.label(
                         RichText::new("📦 Chunked Payload:")
@@ -252,10 +407,16 @@ impl TopicTreeUI for ZenohExplorer {
                     ));
                 });
                 if received == total {
-                    ui.label(
-                        RichText::new("✓ All chunks received - click Export to reassemble")
-                            .color(ExplorerColors::SUCCESS),
-                    );
+                    ui.horizontal(|ui| {
+                        ui.label(
+                            RichText::new("✓ All chunks received — ready to save")
+                                .color(ExplorerColors::SUCCESS),
+                        );
+                        if ui.small_button("💾 Save").clicked() {
+                            let topic_owned = topic.clone();
+                            self.save_topic_to_file(&topic_owned);
+                        }
+                    });
                 } else {
                     ui.label(
                         RichText::new(format!(
@@ -308,9 +469,7 @@ impl TopicTreeUI for ZenohExplorer {
                         .id_salt(format!("json_payload_{}", topic))
                         .max_height(400.0)
                         .show(ui, |ui| {
-                            ui.label(
-                                RichText::new(&pretty).code().color(self.text_color()),
-                            );
+                            ui.label(RichText::new(&pretty).code().color(self.text_color()));
                         });
                 } else {
                     egui::ScrollArea::vertical()
@@ -370,10 +529,7 @@ impl TopicTreeUI for ZenohExplorer {
                             ui.horizontal(|ui| {
                                 ui.label(
                                     RichText::new(
-                                        message
-                                            .timestamp
-                                            .format("%H:%M:%S%.3f")
-                                            .to_string(),
+                                        message.timestamp.format("%H:%M:%S%.3f").to_string(),
                                     )
                                     .color(self.text_secondary_color())
                                     .size(TEXT_SMALL_SIZE),
@@ -443,20 +599,16 @@ impl TopicTreeUI for ZenohExplorer {
             format!("{}/{}", parent_path, node.key)
         };
 
-        // Apply filter
-        if !self.tree_filter.is_empty() && !full_path.contains(&self.tree_filter) {
-            // Check if any children match
-            let has_matching_child =
-                self.has_matching_descendant(node, &self.tree_filter, &full_path);
-            if !has_matching_child {
+        // Apply filter via the precomputed visible-path set (deep match:
+        // ancestors of matches and subtrees of matching branches stay visible)
+        if let Some((_, _, visible)) = &self.tree_filter_cache {
+            if !visible.contains(&full_path) {
                 return;
             }
         }
 
         let indent = 12.0 * depth as f32;
-        let is_selected = self
-            .selected_topic
-            .as_ref() == Some(&full_path);
+        let is_selected = self.selected_topic.as_ref() == Some(&full_path);
 
         if node.children.is_empty() {
             // Leaf node - show as selectable in horizontal layout
@@ -465,11 +617,8 @@ impl TopicTreeUI for ZenohExplorer {
 
                 // Local indicator - subtle filled circle with fade-in animation
                 if node.is_local {
-                    let fade = self.animate_fade_in(
-                        ui.ctx(),
-                        &format!("local_leaf_{}", full_path),
-                        1.0,
-                    );
+                    let fade =
+                        self.animate_fade_in(ui.ctx(), &format!("local_leaf_{}", full_path), 1.0);
                     let base_color = if self.dark_mode {
                         ExplorerColors::DARK_SUCCESS
                     } else {
@@ -485,46 +634,84 @@ impl TopicTreeUI for ZenohExplorer {
                         .on_hover_text("Published from this app");
                 }
 
-                let response =
-                    ui.selectable_label(is_selected, format!("📄 {}", node.key));
+                let icon = if node.transfer.is_some() {
+                    "📥"
+                } else {
+                    leaf_icon(
+                        &full_path,
+                        node.last_encoding.as_deref(),
+                        node.last_payload.as_deref(),
+                    )
+                };
+                let response = ui.selectable_label(is_selected, format!("{} {}", icon, node.key));
 
                 if response.clicked() {
                     self.selected_topic = Some(full_path.clone());
                     self.detail_view = DetailView::TopicDetails;
                 }
 
-                // Show message count badge
-                if node.message_count > 0 {
-                    ui.label(
-                        RichText::new(format!("({})", node.message_count))
-                            .size(TEXT_SMALL_SIZE)
-                            .color(ExplorerColors::PRIMARY),
-                    );
+                if let Some(t) = &node.transfer {
+                    let dark_mode = self.dark_mode;
+                    let secondary_color = self.text_secondary_color();
+                    render_transfer_progress(ui, t, dark_mode, secondary_color);
                 }
 
-                // Show preview of last value
-                if let Some(ref payload) = node.last_payload {
-                    let preview = if payload.len() > 30 {
-                        let end = safe_truncate_index(payload, 30);
-                        format!("{}...", &payload[..end])
-                    } else {
-                        payload.clone()
-                    };
-                    ui.label(
-                        RichText::new(preview)
-                            .size(TOPIC_PREVIEW_TEXT_SIZE)
-                            .color(self.text_secondary_color()),
-                    );
+                // Show preview of last value (before leader line so count sits at right edge)
+                // Skip preview when a transfer is active — chunk bytes aren't previewable
+                if node.transfer.is_none() {
+                    if let Some(ref payload) = node.last_payload {
+                        let preview = if payload.len() > 30 {
+                            let end = safe_truncate_index(payload, 30);
+                            format!("{}...", &payload[..end])
+                        } else {
+                            payload.clone()
+                        };
+                        ui.label(
+                            RichText::new(preview)
+                                .size(TOPIC_PREVIEW_TEXT_SIZE)
+                                .color(self.text_secondary_color()),
+                        );
+                    }
                 }
+
+                // Quick save on rows with an exportable payload
+                let exportable = node.transfer.as_ref().is_some_and(|t| t.is_complete())
+                    || self
+                        .payload_store
+                        .read()
+                        .is_ok_and(|s| s.contains_key(&full_path));
+                if exportable && ui.small_button("💾").on_hover_text("Save file").clicked() {
+                    self.save_topic_to_file(&full_path);
+                }
+
+                // Show message count with leader line (always dashed/collapsed-style for leaves)
+                leader_line_with_count(ui, false, node.message_count, self.text_tertiary_color());
             });
         } else {
             // Branch node - collapsible with consistent spacing
-            let id = egui::Id::new(format!("treenode_{}", full_path));
+            // While filtering, branches render expanded under a separate ID
+            // namespace so the user's normal expand/collapse state is bypassed,
+            // not overwritten; clearing the filter restores it.
+            let filtering = self.tree_filter_cache.is_some();
+            let id = if filtering {
+                egui::Id::new(("treenode_filtered", &full_path))
+            } else {
+                egui::Id::new(("treenode", &full_path))
+            };
             let state = egui::collapsing_header::CollapsingState::load_with_default_open(
                 ui.ctx(),
                 id,
-                false,
+                filtering,
             );
+            let expanded = state.is_open();
+            let tertiary = self.text_tertiary_color();
+            let cumulative_leaves = node.cumulative_leaves;
+
+            // Clone the transfer state before the header closure to avoid borrow conflicts:
+            // show_header takes a FnOnce(&mut Ui) which prevents calling &self methods inside.
+            let transfer_snapshot: Option<TransferState> = node.transfer.clone();
+            let dark_mode = self.dark_mode;
+            let secondary_color = self.text_secondary_color();
 
             let header_response = state.show_header(ui, |ui| {
                 ui.horizontal(|ui| {
@@ -552,20 +739,22 @@ impl TopicTreeUI for ZenohExplorer {
                             .on_hover_text("Published from this app");
                     }
 
+                    let icon = if depth == 0 { "🌐" } else { "📡" };
                     let response =
-                        ui.selectable_label(is_selected, format!("📁 {}", node.key));
+                        ui.selectable_label(is_selected, format!("{} {}", icon, node.key));
 
                     if response.clicked() {
                         self.selected_topic = Some(full_path.clone());
                         self.detail_view = DetailView::TopicDetails;
                     }
 
-                    // Show child count
-                    ui.label(
-                        RichText::new(format!("({})", node.children.len()))
-                            .size(TEXT_SMALL_SIZE)
-                            .color(self.text_tertiary_color()),
-                    );
+                    // Show transfer progress inline if this branch-topic is receiving chunks
+                    if let Some(ref t) = transfer_snapshot {
+                        render_transfer_progress(ui, t, dark_mode, secondary_color);
+                    }
+
+                    // Show descendant leaf count with leader line
+                    leader_line_with_count(ui, expanded, cumulative_leaves, tertiary);
                 });
             });
 
@@ -577,19 +766,76 @@ impl TopicTreeUI for ZenohExplorer {
         }
     }
 
-    /// Check if node or any descendant matches filter
-    fn has_matching_descendant(&self, node: &ZenohNode, filter: &str, current_path: &str) -> bool {
-        if current_path.contains(filter) {
-            return true;
-        }
-
-        for (key, child) in &node.children {
-            let child_path = format!("{}/{}", current_path, key);
-            if self.has_matching_descendant(child, filter, &child_path) {
-                return true;
+    /// Run the full save flow for a topic: fetch/reassemble, native dialog,
+    /// write — surfacing any failure in the global alert banner.
+    fn save_topic_to_file(&mut self, topic: &str) {
+        let result = self
+            .payload_store
+            .read()
+            .map_err(|_| "Payload store lock poisoned".to_string())
+            .and_then(|store| transfer::get_payload_for_export(&store, topic));
+        match result {
+            Ok(payload) => {
+                let suggested =
+                    transfer::suggested_export_filename(topic, payload.filename.as_deref());
+                match transfer::export_payload_to_file(&suggested, &payload.bytes) {
+                    Ok(Some(path)) => {
+                        self.ui_alert = Some(format!("✓ Saved to {}", path.display()));
+                    }
+                    Ok(None) => {} // user cancelled
+                    Err(e) => self.ui_alert = Some(format!("Save failed: {}", e)),
+                }
             }
+            Err(e) => self.ui_alert = Some(format!("Save failed: {}", e)),
         }
+    }
+}
 
-        false
+/// Icon bucket for leaf topics — zenoh/embedded/automation themed:
+/// 🛠 system (@/ zenoh admin space), 🏷 text/JSON (live KV telemetry),
+/// 💾 binary/unknown (firmware/blobs). Prefers the declared encoding, falls
+/// back to the payload preview heuristic (binary previews start with "[binary").
+pub(crate) fn leaf_icon(
+    full_path: &str,
+    encoding: Option<&str>,
+    last_payload: Option<&str>,
+) -> &'static str {
+    if full_path.starts_with('@') {
+        return "🛠";
+    }
+    if let Some(enc) = encoding {
+        let e = enc.to_ascii_lowercase();
+        if e.contains("json") || e.starts_with("text/") {
+            return "🏷";
+        }
+        if e.contains("octet-stream") {
+            return "💾";
+        }
+    }
+    match last_payload {
+        Some(p) if p.starts_with("[binary") => "💾",
+        Some(_) => "🏷",
+        None => "💾",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn leaf_icons_bucket_correctly() {
+        assert_eq!(leaf_icon("@/session/x", None, None), "🛠");
+        assert_eq!(leaf_icon("demo/t", Some("application/json"), None), "🏷");
+        assert_eq!(leaf_icon("demo/t", Some("text/plain"), Some("hello")), "🏷");
+        assert_eq!(
+            leaf_icon("demo/t", Some("application/octet-stream"), None),
+            "💾"
+        );
+        assert_eq!(
+            leaf_icon("demo/t", None, Some("[binary 1024 bytes] ff 00")),
+            "💾"
+        );
+        assert_eq!(leaf_icon("demo/t", None, None), "💾");
     }
 }

@@ -9,10 +9,7 @@ use zenoh::Session;
 
 use crate::types::*;
 
-pub fn message_buffer_thread(
-    buffer_receiver: Receiver<ZenohEvent>,
-    ui_sender: Sender<ZenohEvent>,
-) {
+pub fn message_buffer_thread(buffer_receiver: Receiver<ZenohEvent>, ui_sender: Sender<ZenohEvent>) {
     info!("Message buffer thread started");
 
     let batch_interval = std::time::Duration::from_millis(16); // ~60fps
@@ -37,7 +34,8 @@ pub fn message_buffer_thread(
                         other_event => {
                             // Flush any pending messages first
                             if !message_buffer.is_empty() {
-                                let batch = std::mem::replace(&mut message_buffer, Vec::with_capacity(100));
+                                let batch =
+                                    std::mem::replace(&mut message_buffer, Vec::with_capacity(100));
                                 let _ = ui_sender.send(ZenohEvent::MessageBatch(batch));
                             }
                             let _ = ui_sender.send(other_event);
@@ -95,7 +93,8 @@ pub async fn zenoh_worker(
     // Monitor session's ** subscription (background traffic observation)
     let mut monitor_subscription: Option<ActiveSubscription> = None;
     // Active queryable and its associated task
-    let mut queryable_task: Option<(tokio::task::JoinHandle<()>, tokio::sync::mpsc::Sender<()>)> = None;
+    let mut queryable_task: Option<(tokio::task::JoinHandle<()>, tokio::sync::mpsc::Sender<()>)> =
+        None;
 
     info!("Worker thread main loop starting...");
 
@@ -126,8 +125,12 @@ pub async fn zenoh_worker(
 
                                 // Send PublishingConnected event
                                 match event_sender.send(ZenohEvent::PublishingConnected) {
-                                    Ok(_) => info!("Successfully sent PublishingConnected event to GUI"),
-                                    Err(e) => error!("Failed to send PublishingConnected event: {:?}", e),
+                                    Ok(_) => {
+                                        info!("Successfully sent PublishingConnected event to GUI")
+                                    }
+                                    Err(e) => {
+                                        error!("Failed to send PublishingConnected event: {:?}", e)
+                                    }
                                 }
 
                                 // Spawn a separate discovery thread to monitor peers/routers
@@ -145,39 +148,52 @@ pub async fn zenoh_worker(
                                         loop {
                                             // Count peers
                                             let mut peers_count = 0;
-                                            let mut peers_iter = discovery_session.info().peers_zid().await;
+                                            let mut peers_iter =
+                                                discovery_session.info().peers_zid().await;
                                             while peers_iter.next().is_some() {
                                                 peers_count += 1;
                                             }
 
                                             // Count routers
                                             let mut routers_count = 0;
-                                            let mut routers_iter = discovery_session.info().routers_zid().await;
+                                            let mut routers_iter =
+                                                discovery_session.info().routers_zid().await;
                                             while routers_iter.next().is_some() {
                                                 routers_count += 1;
                                             }
 
                                             // Send update to UI
-                                            if discovery_sender.send(ZenohEvent::DiscoveryUpdate {
-                                                peers: peers_count,
-                                                routers: routers_count,
-                                            }).is_err() {
+                                            if discovery_sender
+                                                .send(ZenohEvent::DiscoveryUpdate {
+                                                    peers: peers_count,
+                                                    routers: routers_count,
+                                                })
+                                                .is_err()
+                                            {
                                                 // Channel closed, exit thread
                                                 break;
                                             }
 
                                             // Poll every 2 seconds
-                                            tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+                                            tokio::time::sleep(std::time::Duration::from_secs(2))
+                                                .await;
                                         }
                                     });
                                 });
 
                                 // Phase 2: Connect the monitor session with scouting disabled
                                 // Use listen_port + 1000 to avoid port conflicts in peer mode
-                                let monitor_port = listen_port.parse::<u16>().unwrap_or(7447) + 1000;
+                                let monitor_port =
+                                    listen_port.parse::<u16>().unwrap_or(7447) + 1000;
                                 info!("Connecting monitor session on port {}", monitor_port);
 
-                                match connect_zenoh_monitor(&locators, &monitor_port.to_string(), &mode).await {
+                                match connect_zenoh_monitor(
+                                    &locators,
+                                    &monitor_port.to_string(),
+                                    &mode,
+                                )
+                                .await
+                                {
                                     Ok(mon_session) => {
                                         info!("Worker successfully created monitor session");
                                         let mon_session_arc = Arc::new(mon_session);
@@ -188,7 +204,8 @@ pub async fn zenoh_worker(
                                             Ok(subscriber) => {
                                                 info!("Monitor session subscribed to **");
                                                 let event_sender_clone = event_sender.clone();
-                                                let (cancel_sender, mut cancel_receiver) = oneshot::channel();
+                                                let (cancel_sender, mut cancel_receiver) =
+                                                    oneshot::channel();
 
                                                 // Spawn task to handle monitor subscription messages
                                                 let task_handle = tokio::spawn(async move {
@@ -217,6 +234,11 @@ pub async fn zenoh_worker(
                                                                                 }
                                                                             };
 
+                                                                        let filename = sample
+                                                                            .attachment()
+                                                                            .and_then(|a| a.try_to_string().ok())
+                                                                            .map(|s| s.into_owned());
+
                                                                         let message = ZenohMessage::new_with_bytes(
                                                                             sample.key_expr().to_string(),
                                                                             payload_display,
@@ -226,7 +248,8 @@ pub async fn zenoh_worker(
                                                                             MessageType::Subscribe,
                                                                             false,  // Monitor messages are always from remote
                                                                             MessageSource::MonitorSession,
-                                                                        );
+                                                                        )
+                                                                        .with_filename(filename);
 
                                                                         let _ = event_sender_clone
                                                                             .send(ZenohEvent::MessageReceived(message));
@@ -254,8 +277,13 @@ pub async fn zenoh_worker(
 
                                         // Send MonitorConnected event (both sessions now ready)
                                         match event_sender.send(ZenohEvent::MonitorConnected) {
-                                            Ok(_) => info!("Successfully sent MonitorConnected event to GUI"),
-                                            Err(e) => error!("Failed to send MonitorConnected event: {:?}", e),
+                                            Ok(_) => info!(
+                                                "Successfully sent MonitorConnected event to GUI"
+                                            ),
+                                            Err(e) => error!(
+                                                "Failed to send MonitorConnected event: {:?}",
+                                                e
+                                            ),
                                         }
                                     }
                                     Err(e) => {
@@ -367,6 +395,11 @@ pub async fn zenoh_worker(
                                                                     }
                                                                 };
 
+                                                            let filename = sample
+                                                                .attachment()
+                                                                .and_then(|a| a.try_to_string().ok())
+                                                                .map(|s| s.into_owned());
+
                                                             let message = ZenohMessage::new_with_bytes(
                                                                 sample.key_expr().to_string(),
                                                                 payload_display,
@@ -376,7 +409,8 @@ pub async fn zenoh_worker(
                                                                 MessageType::Subscribe,
                                                                 false,  // Subscription messages are always from remote
                                                                 MessageSource::PublishingSession,
-                                                            );
+                                                            )
+                                                            .with_filename(filename);
 
                                                             match event_sender_clone
                                                                 .send(ZenohEvent::MessageReceived(message)) {
@@ -421,6 +455,7 @@ pub async fn zenoh_worker(
                         payload,
                         encoding,
                         from_import,
+                        filename,
                     } => {
                         if let Some(ref sess) = publishing_session {
                             // Generate display string - only preview, never clone full payload
@@ -428,14 +463,29 @@ pub async fn zenoh_worker(
                                 let preview_len = payload.len().min(256);
                                 match std::str::from_utf8(&payload[..preview_len]) {
                                     Ok(text) if payload.len() <= 256 => text.to_string(),
-                                    Ok(text) => format!("{}... [+{} bytes]", text, payload.len() - preview_len),
+                                    Ok(text) => format!(
+                                        "{}... [+{} bytes]",
+                                        text,
+                                        payload.len() - preview_len
+                                    ),
                                     Err(_) => {
                                         // Binary - show hex preview
-                                        let hex: Vec<String> = payload[..preview_len].iter().map(|b| format!("{:02x}", b)).collect();
+                                        let hex: Vec<String> = payload[..preview_len]
+                                            .iter()
+                                            .map(|b| format!("{:02x}", b))
+                                            .collect();
                                         if payload.len() > 256 {
-                                            format!("[binary {} bytes] {}...", payload.len(), hex.join(" "))
+                                            format!(
+                                                "[binary {} bytes] {}...",
+                                                payload.len(),
+                                                hex.join(" ")
+                                            )
                                         } else {
-                                            format!("[binary {} bytes] {}", payload.len(), hex.join(" "))
+                                            format!(
+                                                "[binary {} bytes] {}",
+                                                payload.len(),
+                                                hex.join(" ")
+                                            )
                                         }
                                     }
                                 }
@@ -443,9 +493,13 @@ pub async fn zenoh_worker(
 
                             // Store in local kvstore for queryable responses (only store small payloads)
                             // Skip storage for imported files - they are ephemeral and shouldn't persist in memory
-                            if !from_import && payload.len() <= 10 * 1024 * 1024 { // 10MB limit for kvstore
+                            if !from_import && payload.len() <= 10 * 1024 * 1024 {
+                                // 10MB limit for kvstore
                                 if let Ok(mut store) = local_kvstore.write() {
-                                    store.insert(key.clone(), (payload_str.clone(), encoding.clone()));
+                                    store.insert(
+                                        key.clone(),
+                                        (payload_str.clone(), encoding.clone()),
+                                    );
                                 }
                             }
 
@@ -464,8 +518,12 @@ pub async fn zenoh_worker(
                             if payload_len > MAX_SINGLE_PAYLOAD {
                                 // Large payload - send in chunks
                                 let total_chunks = payload_len.div_ceil(CHUNK_SIZE);
-                                info!("Chunking {} byte payload into {} chunks of {}MB each",
-                                      payload_len, total_chunks, CHUNK_SIZE / 1024 / 1024);
+                                info!(
+                                    "Chunking {} byte payload into {} chunks of {}MB each",
+                                    payload_len,
+                                    total_chunks,
+                                    CHUNK_SIZE / 1024 / 1024
+                                );
 
                                 let mut chunk_num = 0;
                                 let mut offset = 0;
@@ -474,19 +532,31 @@ pub async fn zenoh_worker(
                                 while offset < payload_len {
                                     let end = std::cmp::min(offset + CHUNK_SIZE, payload_len);
                                     let chunk = payload[offset..end].to_vec();
-                                    let chunk_key = format!("{}/__chunk/{}/{}/{}",
-                                                           key, payload_len, total_chunks, chunk_num);
+                                    let chunk_key = format!(
+                                        "{}/__chunk/{}/{}/{}",
+                                        key, payload_len, total_chunks, chunk_num
+                                    );
 
-                                    match sess
+                                    let mut put = sess
                                         .put(&chunk_key, chunk)
                                         .encoding(&encoding as &str)
-                                        .congestion_control(zenoh::qos::CongestionControl::Block)
-                                        .await
-                                    {
-                                        Ok(_) => info!("Published chunk {}/{} ({} bytes) to {}",
-                                                      chunk_num + 1, total_chunks, end - offset, chunk_key),
+                                        .congestion_control(zenoh::qos::CongestionControl::Block);
+                                    if let Some(ref name) = filename {
+                                        put = put.attachment(name.as_bytes().to_vec());
+                                    }
+                                    match put.await {
+                                        Ok(_) => info!(
+                                            "Published chunk {}/{} ({} bytes) to {}",
+                                            chunk_num + 1,
+                                            total_chunks,
+                                            end - offset,
+                                            chunk_key
+                                        ),
                                         Err(e) => {
-                                            error!("Failed to publish chunk {} to {}: {}", chunk_num, chunk_key, e);
+                                            error!(
+                                                "Failed to publish chunk {} to {}: {}",
+                                                chunk_num, chunk_key, e
+                                            );
                                             all_ok = false;
                                             break;
                                         }
@@ -497,38 +567,54 @@ pub async fn zenoh_worker(
                                 }
 
                                 if all_ok {
-                                    info!("Successfully published all {} chunks for {}", total_chunks, key);
+                                    info!(
+                                        "Successfully published all {} chunks for {}",
+                                        total_chunks, key
+                                    );
                                 }
-                            } else if payload_len > 100 * 1024 * 1024 { // 100MB threshold for no-echo
-                                match sess
-                                    .put(&key, payload)  // Move directly, no clone
+                            } else if payload_len > 100 * 1024 * 1024 {
+                                // 100MB threshold for no-echo
+                                let mut put = sess
+                                    .put(&key, payload) // Move directly, no clone
                                     .encoding(&encoding as &str)
-                                    .congestion_control(zenoh::qos::CongestionControl::Block)
-                                    .await
-                                {
-                                    Ok(_) => info!("Published {} bytes to {} (large payload, no echo)", payload_len, key),
+                                    .congestion_control(zenoh::qos::CongestionControl::Block);
+                                if let Some(ref name) = filename {
+                                    put = put.attachment(name.as_bytes().to_vec());
+                                }
+                                match put.await {
+                                    Ok(_) => info!(
+                                        "Published {} bytes to {} (large payload, no echo)",
+                                        payload_len, key
+                                    ),
                                     Err(e) => error!("Failed to publish to {}: {}", key, e),
                                 }
                                 // Don't echo - too large. Subscription will receive it.
                             } else if from_import {
                                 // Imported file - publish but don't store/echo to free memory immediately
-                                match sess
-                                    .put(&key, payload)  // Move directly, no clone needed
+                                let mut put = sess
+                                    .put(&key, payload) // Move directly, no clone needed
                                     .encoding(&encoding as &str)
-                                    .congestion_control(zenoh::qos::CongestionControl::Block)
-                                    .await
-                                {
-                                    Ok(_) => info!("Published {} bytes to {} (imported file, no storage)", payload_len, key),
+                                    .congestion_control(zenoh::qos::CongestionControl::Block);
+                                if let Some(ref name) = filename {
+                                    put = put.attachment(name.as_bytes().to_vec());
+                                }
+                                match put.await {
+                                    Ok(_) => info!(
+                                        "Published {} bytes to {} (imported file, no storage)",
+                                        payload_len, key
+                                    ),
                                     Err(e) => error!("Failed to publish to {}: {}", key, e),
                                 }
                                 // Don't echo back - imported files are ephemeral, memory freed after publish
                             } else {
-                                match sess
+                                let mut put = sess
                                     .put(&key, payload.clone())
                                     .encoding(&encoding as &str)
-                                    .congestion_control(zenoh::qos::CongestionControl::Block)
-                                    .await
-                                {
+                                    .congestion_control(zenoh::qos::CongestionControl::Block);
+                                if let Some(ref name) = filename {
+                                    put = put.attachment(name.as_bytes().to_vec());
+                                }
+                                match put.await {
                                     Ok(_) => info!("Published {} bytes to {}", payload_len, key),
                                     Err(e) => error!("Failed to publish to {}: {}", key, e),
                                 }
@@ -537,13 +623,14 @@ pub async fn zenoh_worker(
                                 let message = ZenohMessage::new_with_bytes(
                                     key.clone(),
                                     payload_str,
-                                    payload,  // Move, not clone
+                                    payload, // Move, not clone
                                     encoding,
                                     Utc::now(),
                                     MessageType::Publish,
-                                    true,  // Published from this app, so it's local
+                                    true, // Published from this app, so it's local
                                     MessageSource::LocalEcho,
-                                );
+                                )
+                                .with_filename(filename.clone());
 
                                 let _ = event_sender.send(ZenohEvent::MessageReceived(message));
                             }
@@ -575,72 +662,95 @@ pub async fn zenoh_worker(
                                 Ok(replies) => {
                                     info!("Query sent successfully (target=All, consolidation=None), waiting for replies...");
 
-                                let event_sender_query = event_sender.clone();
-                                let selector_clone = selector.clone();
-                                tokio::spawn(async move {
-                                    let mut received_replies = false;
-                                    while let Ok(reply) = replies.recv_async().await {
-                                        info!("Received a reply from query");
-                                        match reply.result() {
-                                            Ok(sample) => {
-                                                received_replies = true;
-                                                info!("Query reply OK: key={}", sample.key_expr());
+                                    let event_sender_query = event_sender.clone();
+                                    let selector_clone = selector.clone();
+                                    tokio::spawn(async move {
+                                        let mut received_replies = false;
+                                        while let Ok(reply) = replies.recv_async().await {
+                                            info!("Received a reply from query");
+                                            match reply.result() {
+                                                Ok(sample) => {
+                                                    received_replies = true;
+                                                    info!(
+                                                        "Query reply OK: key={}",
+                                                        sample.key_expr()
+                                                    );
 
-                                                // Check if reply is from local queryable via attachment
-                                                let is_local = sample.attachment()
-                                                    .and_then(|att| att.try_to_string().ok())
-                                                    .map(|att_str| att_str.contains("source:local"))
-                                                    .unwrap_or(false);
+                                                    // Check if reply is from local queryable via attachment
+                                                    let is_local = sample
+                                                        .attachment()
+                                                        .and_then(|att| att.try_to_string().ok())
+                                                        .map(|att_str| {
+                                                            att_str.contains("source:local")
+                                                        })
+                                                        .unwrap_or(false);
 
-                                                info!("Query reply is_local={}", is_local);
+                                                    info!("Query reply is_local={}", is_local);
 
-                                                // Get raw bytes for export
-                                                let raw_bytes: Vec<u8> = sample.payload().to_bytes().to_vec();
+                                                    // Get raw bytes for export
+                                                    let raw_bytes: Vec<u8> =
+                                                        sample.payload().to_bytes().to_vec();
 
-                                                let payload = match sample.payload().try_to_string()
-                                                {
-                                                    Ok(s) => s.into_owned(),
-                                                    Err(_) => {
-                                                        // Show hex bytes for binary data
-                                                        let hex: Vec<String> = raw_bytes.iter().take(256).map(|b| format!("{:02x}", b)).collect();
-                                                        if raw_bytes.len() > 256 {
-                                                            format!("[binary {} bytes] {}...", raw_bytes.len(), hex.join(" "))
-                                                        } else {
-                                                            format!("[binary {} bytes] {}", raw_bytes.len(), hex.join(" "))
-                                                        }
-                                                    }
-                                                };
+                                                    let payload =
+                                                        match sample.payload().try_to_string() {
+                                                            Ok(s) => s.into_owned(),
+                                                            Err(_) => {
+                                                                // Show hex bytes for binary data
+                                                                let hex: Vec<String> = raw_bytes
+                                                                    .iter()
+                                                                    .take(256)
+                                                                    .map(|b| format!("{:02x}", b))
+                                                                    .collect();
+                                                                if raw_bytes.len() > 256 {
+                                                                    format!(
+                                                                        "[binary {} bytes] {}...",
+                                                                        raw_bytes.len(),
+                                                                        hex.join(" ")
+                                                                    )
+                                                                } else {
+                                                                    format!(
+                                                                        "[binary {} bytes] {}",
+                                                                        raw_bytes.len(),
+                                                                        hex.join(" ")
+                                                                    )
+                                                                }
+                                                            }
+                                                        };
 
-                                                let message = ZenohMessage::new_with_bytes(
-                                                    sample.key_expr().to_string(),
-                                                    payload,
-                                                    raw_bytes,
-                                                    "text/plain".to_string(),
-                                                    Utc::now(),
-                                                    MessageType::QueryReply,
-                                                    is_local,
-                                                    MessageSource::PublishingSession,
-                                                );
+                                                    let message = ZenohMessage::new_with_bytes(
+                                                        sample.key_expr().to_string(),
+                                                        payload,
+                                                        raw_bytes,
+                                                        "text/plain".to_string(),
+                                                        Utc::now(),
+                                                        MessageType::QueryReply,
+                                                        is_local,
+                                                        MessageSource::PublishingSession,
+                                                    );
 
-                                                let _ = event_sender_query
-                                                    .send(ZenohEvent::MessageReceived(message));
-                                            }
-                                            Err(e) => {
-                                                error!("Query error: {}", e);
+                                                    let _ = event_sender_query
+                                                        .send(ZenohEvent::MessageReceived(message));
+                                                }
+                                                Err(e) => {
+                                                    error!("Query error: {}", e);
+                                                }
                                             }
                                         }
-                                    }
 
-                                    info!("Query reply loop ended, received_replies={}", received_replies);
+                                        info!(
+                                            "Query reply loop ended, received_replies={}",
+                                            received_replies
+                                        );
 
-                                    // If no replies were received, send alert
-                                    if !received_replies {
-                                        let _ =
-                                            event_sender_query.send(ZenohEvent::QueryNoResponses {
-                                                selector: selector_clone,
-                                            });
-                                    }
-                                });
+                                        // If no replies were received, send alert
+                                        if !received_replies {
+                                            let _ = event_sender_query.send(
+                                                ZenohEvent::QueryNoResponses {
+                                                    selector: selector_clone,
+                                                },
+                                            );
+                                        }
+                                    });
                                 }
                                 Err(e) => {
                                     error!("Failed to send query: {}", e);
@@ -848,18 +958,47 @@ pub async fn connect_zenoh(
 
     // Increase RX buffer size for handling high-throughput (default is 65535)
     // Set to 16MB to handle large fragmented messages over UDP
-    config.transport.link.rx.set_buffer_size(16 * 1024 * 1024).unwrap();
+    config
+        .transport
+        .link
+        .rx
+        .set_buffer_size(16 * 1024 * 1024)
+        .unwrap();
 
-    info!("Set batch_size to {} bytes, rx_buffer to 16MB (protocol: {})", batch_size, protocol);
+    info!(
+        "Set batch_size to {} bytes, rx_buffer to 16MB (protocol: {})",
+        batch_size, protocol
+    );
 
     // Increase queue sizes to handle large payload bursts (default is 2, max is 16)
     // This allows more batches to be queued before back-pressure kicks in
     config.transport.link.tx.queue.size.set_data(16).unwrap();
-    config.transport.link.tx.queue.size.set_data_high(16).unwrap();
-    config.transport.link.tx.queue.size.set_data_low(16).unwrap();
+    config
+        .transport
+        .link
+        .tx
+        .queue
+        .size
+        .set_data_high(16)
+        .unwrap();
+    config
+        .transport
+        .link
+        .tx
+        .queue
+        .size
+        .set_data_low(16)
+        .unwrap();
 
     // Send immediately without waiting to batch
-    config.transport.link.tx.queue.batching.set_enabled(false).unwrap();
+    config
+        .transport
+        .link
+        .tx
+        .queue
+        .batching
+        .set_enabled(false)
+        .unwrap();
 
     // Increase wait_before_close timeout for Block congestion control (default: 5 seconds)
     // Set to 5 minutes (300 seconds = 300_000_000 microseconds) to allow large transfers
@@ -1038,7 +1177,12 @@ pub async fn connect_zenoh_monitor(
     // Set batch size based on protocol
     let batch_size: u16 = if is_udp_based { 1472 } else { 65535 };
     config.transport.link.tx.set_batch_size(batch_size).unwrap();
-    config.transport.link.rx.set_buffer_size(16 * 1024 * 1024).unwrap();
+    config
+        .transport
+        .link
+        .rx
+        .set_buffer_size(16 * 1024 * 1024)
+        .unwrap();
 
     // Configure the connection mode
     if mode == "peer" {

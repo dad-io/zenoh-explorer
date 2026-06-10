@@ -24,7 +24,7 @@ jobs:
             ext: ''
             archive: tar.gz
           - target: x86_64-apple-darwin
-            os: macos-13
+            os: macos-14
             ext: ''
             archive: tar.gz
           - target: x86_64-pc-windows-msvc
@@ -64,10 +64,6 @@ jobs:
 
       - name: Build
         run: cargo build --release --target ${{ matrix.target }}
-
-      - name: Debug build output
-        if: matrix.os != 'windows-latest'
-        run: find target -name "${{ env.BINARY_NAME }}*" -type f 2>/dev/null || echo "No binary found"
 
       - name: Prepare artifacts (Unix)
         if: matrix.os != 'windows-latest'

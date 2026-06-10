@@ -22,7 +22,6 @@ target
 
 # Build artifacts
 target/
-Cargo.lock
 
 # Claude-related files
 .claude/
@@ -37,9 +36,7 @@ _archive/
 OVERVIEW.md
 
 # Test files
-tests/
 test_*.sh
-test_*.rs
 test_*.md
 
 # Debug and diagnostic files

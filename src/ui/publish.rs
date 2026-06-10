@@ -3,9 +3,9 @@
 use egui::RichText;
 use tracing::{error, info};
 
+use crate::app::ZenohExplorer;
 use crate::colors::ExplorerColors;
 use crate::types::*;
-use crate::app::ZenohExplorer;
 
 /// Trait for publish tab rendering.
 pub trait PublishUI {
@@ -46,37 +46,36 @@ impl PublishUI for ZenohExplorer {
                                 let total_len = bytes.len();
                                 let preview_len = total_len.min(256);
 
-                                self.publish_payload =
-                                    if let Ok(text) = std::str::from_utf8(&bytes) {
-                                        // Valid UTF-8 text - use safe truncation
-                                        if total_len > preview_len {
-                                            let safe_end =
-                                                safe_truncate_index(text, preview_len);
-                                            format!(
-                                                "{}... [+{} bytes]",
-                                                &text[..safe_end],
-                                                total_len - safe_end
-                                            )
-                                        } else {
-                                            text.to_string()
-                                        }
+                                self.publish_payload = if let Ok(text) = std::str::from_utf8(&bytes)
+                                {
+                                    // Valid UTF-8 text - use safe truncation
+                                    if total_len > preview_len {
+                                        let safe_end = safe_truncate_index(text, preview_len);
+                                        format!(
+                                            "{}... [+{} bytes]",
+                                            &text[..safe_end],
+                                            total_len - safe_end
+                                        )
                                     } else {
-                                        // Binary data - show hex dump (byte slicing is safe)
-                                        let hex: String = bytes[..preview_len]
-                                            .iter()
-                                            .map(|b| format!("{:02x} ", b))
-                                            .collect();
-                                        if total_len > preview_len {
-                                            format!(
-                                                "{}... [+{} bytes, {} total]",
-                                                hex.trim(),
-                                                total_len - preview_len,
-                                                total_len
-                                            )
-                                        } else {
-                                            hex
-                                        }
-                                    };
+                                        text.to_string()
+                                    }
+                                } else {
+                                    // Binary data - show hex dump (byte slicing is safe)
+                                    let hex: String = bytes[..preview_len]
+                                        .iter()
+                                        .map(|b| format!("{:02x} ", b))
+                                        .collect();
+                                    if total_len > preview_len {
+                                        format!(
+                                            "{}... [+{} bytes, {} total]",
+                                            hex.trim(),
+                                            total_len - preview_len,
+                                            total_len
+                                        )
+                                    } else {
+                                        hex
+                                    }
+                                };
 
                                 self.import_memory_bytes = bytes.len();
                                 self.publish_payload_bytes = Some(bytes);
@@ -110,10 +109,7 @@ impl PublishUI for ZenohExplorer {
                 let mut should_regenerate = false;
 
                 ui.horizontal(|ui| {
-                    ui.label(
-                        RichText::new(filename)
-                            .color(self.text_secondary_color()),
-                    );
+                    ui.label(RichText::new(filename).color(self.text_secondary_color()));
                     if let Some(len) = bytes_len {
                         ui.label(
                             RichText::new(format!("({} bytes)", len))
@@ -122,8 +118,11 @@ impl PublishUI for ZenohExplorer {
 
                         // Expand/collapse button for files > 256 bytes
                         if len > 256 {
-                            let button_text =
-                                if was_expanded { "▼ Collapse" } else { "▶ Expand" };
+                            let button_text = if was_expanded {
+                                "▼ Collapse"
+                            } else {
+                                "▶ Expand"
+                            };
                             if ui.button(button_text).clicked() {
                                 self.publish_payload_expanded = !was_expanded;
                                 should_regenerate = true;
@@ -237,6 +236,7 @@ impl PublishUI for ZenohExplorer {
                         payload: payload_bytes,
                         encoding: self.publish_encoding.clone(),
                         from_import, // Don't store imported files after publish
+                        filename: self.publish_payload_filename.clone(),
                     }) {
                         Ok(_) => info!(
                             "GUI: Publish command sent successfully for {} bytes",
