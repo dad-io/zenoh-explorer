@@ -2,8 +2,8 @@
 
 use egui::RichText;
 
-use crate::types::*;
 use crate::app::ZenohExplorer;
+use crate::types::*;
 
 /// Trait for help tab rendering.
 pub trait HelpUI {
@@ -27,9 +27,7 @@ impl HelpUI for ZenohExplorer {
         ui.label(RichText::new("Getting Started:").strong());
         ui.label("1. Configure connection settings and click Connect.");
         ui.label("   • For a quick peer mesh, leave as Peer & Address field blank and select the tcp port of your peers (7447 by default)");
-        ui.label(
-            "   • EARLY VERSION: Only tcp transport and multicast have been tested",
-        );
+        ui.label("   • EARLY VERSION: Only tcp transport and multicast have been tested");
         ui.label("2. Use Subscribe tab to listen to key expressions (e.g., demo/**)");
         ui.label(
             "3. Use Publish tab to send data. Enter text or import files of any size or type.",

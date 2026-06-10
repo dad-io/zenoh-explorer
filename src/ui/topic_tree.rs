@@ -2,14 +2,14 @@
 
 use egui::RichText;
 
+use crate::app::ZenohExplorer;
 use crate::colors::ExplorerColors;
+use crate::transfer;
 use crate::types::*;
 use crate::ui::help::HelpUI;
 use crate::ui::messages::MessagesUI;
 use crate::ui::publish::PublishUI;
 use crate::ui::query::QueryUI;
-use crate::app::ZenohExplorer;
-use crate::transfer;
 
 /// Trait for topic tree and detail rendering.
 pub trait TopicTreeUI {
@@ -78,8 +78,7 @@ impl TopicTreeUI for ZenohExplorer {
                     for subscription in &self.subscriptions {
                         ui.horizontal(|ui| {
                             ui.label(
-                                RichText::new(&subscription.key_expr)
-                                    .size(SUBSCRIPTION_TEXT_SIZE),
+                                RichText::new(&subscription.key_expr).size(SUBSCRIPTION_TEXT_SIZE),
                             );
                             if ui.small_button("✖").clicked() {
                                 if let Some(sender) = &self.command_sender {
@@ -126,11 +125,9 @@ impl TopicTreeUI for ZenohExplorer {
                             );
                             ui.add_space(4.0);
                             ui.label(
-                                RichText::new(
-                                    "💡 Try demo/** or sensor/* in the Subscribe tab",
-                                )
-                                .size(TEXT_SMALL_SIZE)
-                                .color(self.text_tertiary_color()),
+                                RichText::new("💡 Try demo/** or sensor/* in the Subscribe tab")
+                                    .size(TEXT_SMALL_SIZE)
+                                    .color(self.text_tertiary_color()),
                             );
                             ui.add_space(32.0);
                         });
@@ -308,9 +305,7 @@ impl TopicTreeUI for ZenohExplorer {
                         .id_salt(format!("json_payload_{}", topic))
                         .max_height(400.0)
                         .show(ui, |ui| {
-                            ui.label(
-                                RichText::new(&pretty).code().color(self.text_color()),
-                            );
+                            ui.label(RichText::new(&pretty).code().color(self.text_color()));
                         });
                 } else {
                     egui::ScrollArea::vertical()
@@ -370,10 +365,7 @@ impl TopicTreeUI for ZenohExplorer {
                             ui.horizontal(|ui| {
                                 ui.label(
                                     RichText::new(
-                                        message
-                                            .timestamp
-                                            .format("%H:%M:%S%.3f")
-                                            .to_string(),
+                                        message.timestamp.format("%H:%M:%S%.3f").to_string(),
                                     )
                                     .color(self.text_secondary_color())
                                     .size(TEXT_SMALL_SIZE),
@@ -454,9 +446,7 @@ impl TopicTreeUI for ZenohExplorer {
         }
 
         let indent = 12.0 * depth as f32;
-        let is_selected = self
-            .selected_topic
-            .as_ref() == Some(&full_path);
+        let is_selected = self.selected_topic.as_ref() == Some(&full_path);
 
         if node.children.is_empty() {
             // Leaf node - show as selectable in horizontal layout
@@ -465,11 +455,8 @@ impl TopicTreeUI for ZenohExplorer {
 
                 // Local indicator - subtle filled circle with fade-in animation
                 if node.is_local {
-                    let fade = self.animate_fade_in(
-                        ui.ctx(),
-                        &format!("local_leaf_{}", full_path),
-                        1.0,
-                    );
+                    let fade =
+                        self.animate_fade_in(ui.ctx(), &format!("local_leaf_{}", full_path), 1.0);
                     let base_color = if self.dark_mode {
                         ExplorerColors::DARK_SUCCESS
                     } else {
@@ -485,8 +472,7 @@ impl TopicTreeUI for ZenohExplorer {
                         .on_hover_text("Published from this app");
                 }
 
-                let response =
-                    ui.selectable_label(is_selected, format!("📄 {}", node.key));
+                let response = ui.selectable_label(is_selected, format!("📄 {}", node.key));
 
                 if response.clicked() {
                     self.selected_topic = Some(full_path.clone());
@@ -552,8 +538,7 @@ impl TopicTreeUI for ZenohExplorer {
                             .on_hover_text("Published from this app");
                     }
 
-                    let response =
-                        ui.selectable_label(is_selected, format!("📁 {}", node.key));
+                    let response = ui.selectable_label(is_selected, format!("📁 {}", node.key));
 
                     if response.clicked() {
                         self.selected_topic = Some(full_path.clone());

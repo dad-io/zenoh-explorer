@@ -19,11 +19,11 @@ pub const PAYLOAD_PREVIEW_SIZE: usize = 10 * 1024;
 pub const MAX_UI_DISPLAY_SIZE: usize = 50 * 1024;
 
 // Font sizes
-pub const HEADING_LARGE_SIZE: f32 = 24.0;      // Main app title
-pub const HEADING_MEDIUM_SIZE: f32 = 18.0;     // Section headings
-pub const TEXT_SMALL_SIZE: f32 = 13.0;         // Secondary info
+pub const HEADING_LARGE_SIZE: f32 = 24.0; // Main app title
+pub const HEADING_MEDIUM_SIZE: f32 = 18.0; // Section headings
+pub const TEXT_SMALL_SIZE: f32 = 13.0; // Secondary info
 pub const TOPIC_PREVIEW_TEXT_SIZE: f32 = 13.0; // Topic preview in tree
-pub const SUBSCRIPTION_TEXT_SIZE: f32 = 13.0;  // Subscription list items
+pub const SUBSCRIPTION_TEXT_SIZE: f32 = 13.0; // Subscription list items
 
 // ── Helper functions ─────────────────────────────────────────────────────────
 
@@ -55,7 +55,7 @@ pub struct ZenohNode {
     pub message_count: usize,
     pub last_payload: Option<String>,
     pub last_encoding: Option<String>,
-    pub is_local: bool,  // True if this key was published from this app instance
+    pub is_local: bool, // True if this key was published from this app instance
 }
 
 impl ZenohNode {
@@ -168,7 +168,7 @@ impl ZenohMessage {
 pub enum ZenohCommand {
     Connect {
         locators: String,
-        listen_port: String,  // Port to listen on in peer mode
+        listen_port: String, // Port to listen on in peer mode
         mode: String,
         config_json: String,
     },
@@ -235,8 +235,7 @@ pub enum ZenohEvent {
 
 /// Types of messages that can flow through the Zenoh network.
 /// Each type has associated colors and labels for UI display.
-#[derive(Debug, Clone)]
-#[derive(PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum MessageType {
     Subscribe,
     Publish,
@@ -318,7 +317,9 @@ impl ConnectionStatus {
     pub fn color(&self) -> Color32 {
         match self {
             ConnectionStatus::Connected => ExplorerColors::SUCCESS,
-            ConnectionStatus::ConnectingPublishing | ConnectionStatus::ConnectingMonitor => ExplorerColors::WARNING,
+            ConnectionStatus::ConnectingPublishing | ConnectionStatus::ConnectingMonitor => {
+                ExplorerColors::WARNING
+            }
             ConnectionStatus::Disconnected | ConnectionStatus::Error(_) => ExplorerColors::ERROR,
         }
     }

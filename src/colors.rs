@@ -16,11 +16,11 @@ impl ExplorerColors {
     pub const SUCCESS: Color32 = Color32::from_rgb(52, 199, 89);
     pub const WARNING: Color32 = Color32::from_rgb(255, 149, 0);
     pub const ERROR: Color32 = Color32::from_rgb(255, 59, 48);
-    pub const TEXT_PRIMARY: Color32 = Color32::from_rgb(28, 28, 30);      // Almost black - high contrast
-    pub const TEXT_SECONDARY: Color32 = Color32::from_rgb(60, 60, 67);    // Dark gray - readable (was 99,99,102)
+    pub const TEXT_PRIMARY: Color32 = Color32::from_rgb(28, 28, 30); // Almost black - high contrast
+    pub const TEXT_SECONDARY: Color32 = Color32::from_rgb(60, 60, 67); // Dark gray - readable (was 99,99,102)
     pub const SEPARATOR: Color32 = Color32::from_rgba_premultiplied(0, 0, 0, 26);
     pub const SELECTED_BACKGROUND: Color32 = Color32::from_rgba_premultiplied(0, 122, 255, 25);
-    pub const TEXT_TERTIARY: Color32 = Color32::from_rgb(99, 99, 102);    // Medium gray (swapped with secondary)
+    pub const TEXT_TERTIARY: Color32 = Color32::from_rgb(99, 99, 102); // Medium gray (swapped with secondary)
     pub const SURFACE: Color32 = Color32::from_rgb(250, 250, 250);
 
     // Dark mode colors

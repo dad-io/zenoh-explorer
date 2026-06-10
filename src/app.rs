@@ -70,7 +70,8 @@ pub struct ZenohExplorer {
     pub(crate) json_parse_cache: std::collections::HashMap<u64, Option<String>>,
     pub(crate) expanded_payloads: std::collections::HashSet<String>,
     #[allow(clippy::type_complexity)]
-    pub(crate) payload_store: Arc<RwLock<HashMap<String, (Vec<u8>, chrono::DateTime<chrono::Utc>)>>>,
+    pub(crate) payload_store:
+        Arc<RwLock<HashMap<String, (Vec<u8>, chrono::DateTime<chrono::Utc>)>>>,
 }
 
 impl Default for ZenohExplorer {
@@ -202,8 +203,7 @@ impl ZenohExplorer {
                 style.visuals.widgets.hovered.fg_stroke.color = ExplorerColors::DARK_TEXT_PRIMARY;
                 style.visuals.widgets.active.fg_stroke.color = ExplorerColors::DARK_TEXT_PRIMARY;
 
-                style.visuals.widgets.noninteractive.bg_fill =
-                    ExplorerColors::DARK_CARD_BACKGROUND;
+                style.visuals.widgets.noninteractive.bg_fill = ExplorerColors::DARK_CARD_BACKGROUND;
                 style.visuals.widgets.noninteractive.fg_stroke.color =
                     ExplorerColors::DARK_TEXT_PRIMARY;
 

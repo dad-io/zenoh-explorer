@@ -2,9 +2,9 @@
 
 use egui::RichText;
 
+use crate::app::ZenohExplorer;
 use crate::colors::ExplorerColors;
 use crate::types::*;
-use crate::app::ZenohExplorer;
 
 /// Trait for query tab rendering.
 pub trait QueryUI {
@@ -141,25 +141,20 @@ impl QueryUI for ZenohExplorer {
                                 ui.horizontal(|ui| {
                                     // Local indicator
                                     if message.is_local {
-                                        ui.label(
-                                            RichText::new("●").size(8.0).color(
-                                                if self.dark_mode {
-                                                    ExplorerColors::DARK_SUCCESS
-                                                } else {
-                                                    ExplorerColors::SUCCESS
-                                                },
-                                            ),
-                                        )
+                                        ui.label(RichText::new("●").size(8.0).color(
+                                            if self.dark_mode {
+                                                ExplorerColors::DARK_SUCCESS
+                                            } else {
+                                                ExplorerColors::SUCCESS
+                                            },
+                                        ))
                                         .on_hover_text("From local queryable");
                                     }
 
                                     // Timestamp
                                     ui.label(
                                         RichText::new(
-                                            message
-                                                .timestamp
-                                                .format("%H:%M:%S%.3f")
-                                                .to_string(),
+                                            message.timestamp.format("%H:%M:%S%.3f").to_string(),
                                         )
                                         .color(self.text_secondary_color())
                                         .size(TEXT_SMALL_SIZE),
@@ -179,9 +174,7 @@ impl QueryUI for ZenohExplorer {
                                     };
 
                                     // Try to parse as JSON for pretty display (using cache)
-                                    if let Some(pretty) =
-                                        self.get_cached_json(&display_payload)
-                                    {
+                                    if let Some(pretty) = self.get_cached_json(&display_payload) {
                                         ui.label(
                                             RichText::new(pretty)
                                                 .code()

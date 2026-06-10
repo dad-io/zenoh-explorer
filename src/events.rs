@@ -6,8 +6,8 @@
 use std::time::{Duration, Instant};
 use tracing::{debug, error, info};
 
-use crate::types::*;
 use crate::app::ZenohExplorer;
+use crate::types::*;
 
 impl ZenohExplorer {
     /// Compute a hash for message deduplication (key + partial payload).
@@ -104,9 +104,8 @@ impl ZenohExplorer {
 
         // Clean old hashes periodically
         if self.message_hashes.len().is_multiple_of(100) {
-            self.message_hashes.retain(|_, &mut timestamp| {
-                now.duration_since(timestamp) < self.dedup_ttl
-            });
+            self.message_hashes
+                .retain(|_, &mut timestamp| now.duration_since(timestamp) < self.dedup_ttl);
         }
 
         // Check if we've seen this message recently

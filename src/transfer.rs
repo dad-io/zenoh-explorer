@@ -109,7 +109,11 @@ pub fn get_payload_for_export(
                     reassembled.extend_from_slice(data);
                 }
 
-                info!("Reassembled {} chunks into {} bytes", chunks.len(), reassembled.len());
+                info!(
+                    "Reassembled {} chunks into {} bytes",
+                    chunks.len(),
+                    reassembled.len()
+                );
                 return Some(reassembled);
             } else {
                 info!("Missing chunks: have {}/{}", chunks.len(), total_chunks);
