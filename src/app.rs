@@ -633,10 +633,20 @@ impl eframe::App for ZenohExplorer {
                 if let Some(alert_text) = self.ui_alert.clone() {
                     egui::TopBottomPanel::top("alert_banner").show_inside(ui, |ui| {
                         ui.horizontal(|ui| {
-                            ui.label(
-                                RichText::new(format!("⚠ {}", alert_text))
-                                    .color(ExplorerColors::WARNING),
-                            );
+                            let is_success = alert_text.starts_with('✓');
+                            let (text, color) = if is_success {
+                                (
+                                    alert_text.clone(),
+                                    if self.dark_mode {
+                                        ExplorerColors::DARK_SUCCESS
+                                    } else {
+                                        ExplorerColors::SUCCESS
+                                    },
+                                )
+                            } else {
+                                (format!("⚠ {}", alert_text), ExplorerColors::WARNING)
+                            };
+                            ui.label(RichText::new(text).color(color));
                             if ui.small_button("✖").clicked() {
                                 self.ui_alert = None;
                             }
