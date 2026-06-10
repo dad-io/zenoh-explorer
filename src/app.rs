@@ -73,6 +73,10 @@ pub struct ZenohExplorer {
     /// Task 12's filter cache to detect staleness. Written here; reads come next task.
     #[allow(dead_code)]
     pub(crate) tree_version: u64,
+    /// Cache for the visible-path set: (lowercased filter, tree_version, visible set).
+    /// Populated and read by Task 13's rendering; stored here so it survives frames.
+    #[allow(dead_code)]
+    pub(crate) tree_filter_cache: Option<(String, u64, std::collections::HashSet<String>)>,
 }
 
 impl Default for ZenohExplorer {
@@ -165,6 +169,7 @@ impl ZenohExplorer {
             expanded_payloads: std::collections::HashSet::new(),
             payload_store: Arc::new(RwLock::new(HashMap::new())),
             tree_version: 0,
+            tree_filter_cache: None,
         }
     }
 

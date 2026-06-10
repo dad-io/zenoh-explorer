@@ -515,6 +515,41 @@ impl RateLimiter {
     }
 }
 
+/// One walk over the tree computing the set of node paths visible under a
+/// (lowercased) substring filter. A node is visible if its full path matches
+/// or any descendant's does; since child paths contain the parent path as a
+/// prefix, a matching branch automatically keeps its whole subtree visible.
+#[allow(dead_code)]
+pub fn compute_visible_paths(
+    root: &ZenohNode,
+    filter_lower: &str,
+) -> std::collections::HashSet<String> {
+    fn walk(
+        node: &ZenohNode,
+        path: &str,
+        filter: &str,
+        out: &mut std::collections::HashSet<String>,
+    ) -> bool {
+        let mut visible = path.to_lowercase().contains(filter);
+        for (key, child) in &node.children {
+            let child_path = format!("{}/{}", path, key);
+            if walk(child, &child_path, filter, out) {
+                visible = true;
+            }
+        }
+        if visible {
+            out.insert(path.to_string());
+        }
+        visible
+    }
+
+    let mut out = std::collections::HashSet::new();
+    for (key, child) in &root.children {
+        walk(child, key, filter_lower, &mut out);
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -594,6 +629,29 @@ mod tests {
         let leaf2 = root.insert_path("x//y/z");
         assert_eq!(leaf2.key, "z");
         assert_eq!(root.cumulative_leaves, 1);
+    }
+
+    #[test]
+    fn visible_paths_includes_ancestors_case_insensitive() {
+        let mut root = ZenohNode::new("root".into());
+        root.insert_path("demo/Sensors/Temp1");
+        root.insert_path("demo/other");
+        root.insert_path("unrelated/x");
+        let v = compute_visible_paths(&root, "temp");
+        assert!(v.contains("demo"));
+        assert!(v.contains("demo/Sensors"));
+        assert!(v.contains("demo/Sensors/Temp1"));
+        assert!(!v.contains("demo/other"));
+        assert!(!v.contains("unrelated"));
+    }
+
+    #[test]
+    fn visible_paths_branch_match_keeps_descendants() {
+        let mut root = ZenohNode::new("root".into());
+        root.insert_path("demo/a/b");
+        // "demo" matches; descendants' full paths contain "demo" so they're visible too
+        let v = compute_visible_paths(&root, "demo");
+        assert!(v.contains("demo") && v.contains("demo/a") && v.contains("demo/a/b"));
     }
 
     #[test]
