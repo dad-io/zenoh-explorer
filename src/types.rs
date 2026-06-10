@@ -350,6 +350,55 @@ impl ConnectionStatus {
     }
 }
 
+/// Content-based message deduplication over a sliding time window.
+///
+/// Hashes the FULL payload (seahash) so payloads differing anywhere are never
+/// conflated. Checking and recording are separate so a message dropped after
+/// the check (e.g. by the rate limiter) doesn't poison its own retransmit.
+pub struct Deduper {
+    hashes: std::collections::HashMap<u64, Instant>,
+    last_sweep: Instant,
+    pub ttl: Duration,
+    pub enabled: bool,
+}
+
+impl Deduper {
+    pub fn new(ttl: Duration) -> Self {
+        Self {
+            hashes: Default::default(),
+            last_sweep: Instant::now(),
+            ttl,
+            enabled: true,
+        }
+    }
+
+    pub fn hash_message(key: &str, payload: &[u8]) -> u64 {
+        use std::hash::Hasher;
+        let mut h = seahash::SeaHasher::new();
+        h.write(key.as_bytes());
+        h.write(&[0xff]); // separator: ("ab", "c") must differ from ("a", "bc")
+        h.write(payload);
+        h.finish()
+    }
+
+    /// True if this hash was recorded within the TTL. Does NOT record.
+    pub fn seen_recently(&mut self, hash: u64) -> bool {
+        if self.last_sweep.elapsed() > self.ttl {
+            let ttl = self.ttl;
+            self.hashes.retain(|_, t| t.elapsed() < ttl);
+            self.last_sweep = Instant::now();
+        }
+        self.hashes
+            .get(&hash)
+            .is_some_and(|t| t.elapsed() < self.ttl)
+    }
+
+    /// Record a hash as seen now. Call only after the message is accepted.
+    pub fn record(&mut self, hash: u64) {
+        self.hashes.insert(hash, Instant::now());
+    }
+}
+
 /// Tracks message rate to prevent flooding
 pub struct RateLimiter {
     pub window_start: Instant,
@@ -382,5 +431,51 @@ impl RateLimiter {
         } else {
             false // Rate limit exceeded
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn dedup_same_content_within_window() {
+        let mut d = Deduper::new(Duration::from_secs(60));
+        let h = Deduper::hash_message("k", b"payload");
+        assert!(!d.seen_recently(h));
+        d.record(h);
+        assert!(d.seen_recently(h));
+    }
+
+    #[test]
+    fn dedup_differs_when_middle_bytes_differ() {
+        // Two 16KB payloads: same first/last 4KB, different middle.
+        let mut a = vec![0u8; 16 * 1024];
+        let mut b = vec![0u8; 16 * 1024];
+        a[8000] = 1;
+        b[8000] = 2;
+        assert_ne!(
+            Deduper::hash_message("k", &a),
+            Deduper::hash_message("k", &b)
+        );
+    }
+
+    #[test]
+    fn dedup_unrecorded_hash_not_seen() {
+        // A hash that was checked but never recorded (e.g. rate-limited drop)
+        // must not poison the retransmit.
+        let mut d = Deduper::new(Duration::from_secs(60));
+        let h = Deduper::hash_message("k", b"x");
+        assert!(!d.seen_recently(h));
+        assert!(!d.seen_recently(h)); // still unseen — check alone records nothing
+    }
+
+    #[test]
+    fn dedup_expires_after_ttl() {
+        let mut d = Deduper::new(Duration::from_millis(1));
+        let h = Deduper::hash_message("k", b"x");
+        d.record(h);
+        std::thread::sleep(Duration::from_millis(5));
+        assert!(!d.seen_recently(h));
     }
 }

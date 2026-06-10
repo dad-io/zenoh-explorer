@@ -57,7 +57,7 @@ impl MessagesUI for ZenohExplorer {
                 }
             }
 
-            ui.checkbox(&mut self.dedup_enabled, "Dedup");
+            ui.checkbox(&mut self.deduper.enabled, "Dedup");
             if self.messages_deduped > 0 {
                 ui.label(
                     RichText::new(format!("({} deduped)", self.messages_deduped))

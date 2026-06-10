@@ -10,30 +10,6 @@ use crate::app::ZenohExplorer;
 use crate::types::*;
 
 impl ZenohExplorer {
-    /// Compute a hash for message deduplication (key + partial payload).
-    pub(crate) fn compute_message_hash(key: &str, payload: &str) -> u64 {
-        let mut hasher = std::collections::hash_map::DefaultHasher::new();
-        use std::hash::{Hash, Hasher};
-        key.hash(&mut hasher);
-
-        // Hash as bytes to avoid UTF-8 char boundary issues with binary data
-        let bytes = payload.as_bytes();
-        bytes.len().hash(&mut hasher);
-
-        if bytes.len() > MAX_HASH_BYTES * 2 {
-            // Large payload: hash first 4KB + last 4KB
-            bytes[..MAX_HASH_BYTES].hash(&mut hasher);
-            bytes[bytes.len() - MAX_HASH_BYTES..].hash(&mut hasher);
-        } else if bytes.len() > MAX_HASH_BYTES {
-            // Medium payload: hash first 4KB
-            bytes[..MAX_HASH_BYTES].hash(&mut hasher);
-        } else {
-            // Small payload: hash entire thing
-            bytes.hash(&mut hasher);
-        }
-        hasher.finish()
-    }
-
     /// Compute a hash for payload caching (first 4KB only).
     pub(crate) fn compute_payload_hash(payload: &str) -> u64 {
         let mut hasher = std::collections::hash_map::DefaultHasher::new();
@@ -91,33 +67,6 @@ impl ZenohExplorer {
 
         self.json_parse_cache.insert(hash, result.clone());
         result
-    }
-
-    /// Check if message is duplicate and update dedup cache
-    pub(crate) fn is_duplicate(&mut self, key: &str, payload: &str) -> bool {
-        if !self.dedup_enabled {
-            return false;
-        }
-
-        let hash = Self::compute_message_hash(key, payload);
-        let now = Instant::now();
-
-        // Clean old hashes periodically
-        if self.message_hashes.len().is_multiple_of(100) {
-            self.message_hashes
-                .retain(|_, &mut timestamp| now.duration_since(timestamp) < self.dedup_ttl);
-        }
-
-        // Check if we've seen this message recently
-        if let Some(&last_seen) = self.message_hashes.get(&hash) {
-            if now.duration_since(last_seen) < self.dedup_ttl {
-                return true; // Duplicate
-            }
-        }
-
-        // Not a duplicate, record it
-        self.message_hashes.insert(hash, now);
-        false
     }
 
     /// Processes all pending events from the Zenoh worker thread.
@@ -226,7 +175,7 @@ impl ZenohExplorer {
 
             if let Some(idx) = existing_idx {
                 if message.is_local && !self.messages[idx].is_local {
-                    self.messages[idx] = message.clone();
+                    self.messages[idx] = message;
                     return;
                 } else if !message.is_local && self.messages[idx].is_local {
                     return;
@@ -234,32 +183,43 @@ impl ZenohExplorer {
             }
         }
 
-        // Apply deduplication check (but not for query replies, we want to see those every time)
-        if message.message_type != MessageType::QueryReply
-            && self.is_duplicate(&message.key, &message.payload)
-        {
-            self.messages_deduped += 1;
-            return;
-        }
-
-        // Skip paused keys (don't display updates for paused keys)
-        if self.paused_keys.contains(&message.key) {
-            return;
-        }
-
-        // Apply rate limiting
-        if self.rate_limiter.check_and_update() {
-            // Clear query alert if we received a query reply
-            let is_query_reply = message.message_type == MessageType::QueryReply;
-
-            self.add_message_to_browse_tree(&message);
-            self.add_message_with_limits(message);
-
-            if is_query_reply {
-                self.query_alert = None;
+        // Dedup check on FULL content (query replies exempt — we want every reply)
+        let dedup_hash = (self.deduper.enabled && message.message_type != MessageType::QueryReply)
+            .then(|| {
+                let bytes = message
+                    .payload_bytes
+                    .as_deref()
+                    .unwrap_or(message.payload.as_bytes());
+                Deduper::hash_message(&message.key, bytes)
+            });
+        if let Some(h) = dedup_hash {
+            if self.deduper.seen_recently(h) {
+                self.messages_deduped += 1;
+                return;
             }
-        } else {
+        }
+
+        // Rate limiting BEFORE the hash is recorded: a dropped message's
+        // retransmit must not be classified as a duplicate.
+        if !self.rate_limiter.check_and_update() {
             self.rate_limit_drops += 1;
+            return;
+        }
+        if let Some(h) = dedup_hash {
+            self.deduper.record(h);
+        }
+
+        let is_query_reply = message.message_type == MessageType::QueryReply;
+
+        // Pause skips only DISPLAY (the messages list); storage and tree
+        // updates continue so no data is lost while paused.
+        let display = !self.paused_keys.contains(&message.key);
+
+        self.add_message_to_browse_tree(&message);
+        self.add_message_with_limits(message, display);
+
+        if is_query_reply {
+            self.query_alert = None;
         }
     }
 
@@ -315,7 +275,7 @@ impl ZenohExplorer {
 
     /// Add a message while respecting memory and count limits
     /// For large payloads: stores full in payload_store, truncates for messages list
-    pub(crate) fn add_message_with_limits(&mut self, mut message: ZenohMessage) {
+    pub(crate) fn add_message_with_limits(&mut self, mut message: ZenohMessage, display: bool) {
         const MAX_STORED_PAYLOAD: usize = 10 * 1024; // 10KB max in messages list
         const MAX_EXPORT_PAYLOAD: usize = 4 * 1024 * 1024 * 1024; // 4GB max for export store
 
@@ -344,6 +304,10 @@ impl ZenohExplorer {
                     message.key
                 );
             }
+        }
+
+        if !display {
+            return; // stored above; paused traffic doesn't hit the messages list
         }
 
         // Truncate display payload for messages list
