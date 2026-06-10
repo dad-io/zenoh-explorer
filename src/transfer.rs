@@ -147,7 +147,6 @@ pub fn chunk_progress(store: &PayloadStoreMap, topic: &str) -> Option<ChunkProgr
 #[derive(Debug)]
 pub struct ExportPayload {
     pub bytes: Vec<u8>,
-    #[allow(dead_code)] // consumed by Task 19 (export_payload_to_file rewrite)
     pub filename: Option<String>,
 }
 
@@ -219,38 +218,62 @@ pub fn get_payload_for_export(
     Ok(ExportPayload { bytes, filename })
 }
 
-/// Export raw payload bytes to a file via native file dialog.
-///
-/// Opens a platform-native save dialog with a suggested filename derived from the topic
-/// (slashes replaced with underscores, .bin extension). Supports Binary, Text, JSON, and All
-/// file type filters.
-pub fn export_payload_to_file(topic: &str, payload: &[u8]) {
-    // Suggest filename based on topic (replace / with _)
-    let suggested_name = topic.replace('/', "_");
-    let suggested_name = if suggested_name.is_empty() {
+/// Resolve the suggested save-dialog filename:
+/// 1. the transmitted original filename, if any
+/// 2. the topic's last segment, when it carries a plausible extension
+/// 3. fallback: topic with '/'→'_' plus ".bin"
+pub fn suggested_export_filename(topic: &str, transmitted: Option<&str>) -> String {
+    if let Some(name) = transmitted {
+        if !name.trim().is_empty() {
+            return name.to_string();
+        }
+    }
+    let last = topic.rsplit('/').next().unwrap_or(topic);
+    let has_real_ext = last.rsplit_once('.').is_some_and(|(stem, ext)| {
+        !stem.is_empty()
+            && !ext.is_empty()
+            && ext.len() <= 8
+            && ext.chars().all(|c| c.is_ascii_alphanumeric())
+    });
+    if has_real_ext {
+        return last.to_string();
+    }
+    let flat = topic.replace('/', "_");
+    if flat.is_empty() {
         "payload.bin".to_string()
     } else {
-        format!("{}.bin", suggested_name)
-    };
+        format!("{}.bin", flat)
+    }
+}
 
-    // Open native file save dialog
-    if let Some(path) = rfd::FileDialog::new()
-        .set_file_name(&suggested_name)
-        .add_filter("Binary Files", &["bin"])
-        .add_filter("Text Files", &["txt"])
-        .add_filter("JSON Files", &["json"])
-        .add_filter("All Files", &["*"])
-        .save_file()
-    {
-        // Write raw bytes to file
-        match std::fs::write(&path, payload) {
-            Ok(_) => {
+/// Save payload bytes via native dialog. The filter list leads with the
+/// suggested name's own extension (never a forced "Binary (*.bin)" first
+/// filter, which platforms use to append .bin). Returns Ok(None) if the user
+/// cancelled.
+pub fn export_payload_to_file(
+    suggested_name: &str,
+    payload: &[u8],
+) -> Result<Option<std::path::PathBuf>, String> {
+    let ext = std::path::Path::new(suggested_name)
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(str::to_string);
+
+    let mut dialog = rfd::FileDialog::new().set_file_name(suggested_name);
+    if let Some(ref ext) = ext {
+        dialog = dialog.add_filter(format!("{} files", ext.to_uppercase()), &[ext.as_str()]);
+    }
+    dialog = dialog.add_filter("All files", &["*"]);
+
+    match dialog.save_file() {
+        Some(path) => match std::fs::write(&path, payload) {
+            Ok(()) => {
                 info!("Exported {} bytes to: {}", payload.len(), path.display());
+                Ok(Some(path))
             }
-            Err(e) => {
-                info!("Failed to export payload: {}", e);
-            }
-        }
+            Err(e) => Err(format!("Failed to write {}: {}", path.display(), e)),
+        },
+        None => Ok(None),
     }
 }
 
@@ -477,6 +500,41 @@ mod tests {
         store.insert("t".into(), entry(1));
         store.insert("other/__chunk/100/1/0".into(), entry(1));
         assert!(chunk_progress(&store, "t").is_none());
+    }
+
+    #[test]
+    fn suggested_name_prefers_transmitted() {
+        assert_eq!(
+            suggested_export_filename("demo/files", Some("report.pdf")),
+            "report.pdf"
+        );
+    }
+
+    #[test]
+    fn suggested_name_uses_last_segment_extension() {
+        assert_eq!(
+            suggested_export_filename("files/report.pdf", None),
+            "report.pdf"
+        );
+        assert_eq!(
+            suggested_export_filename("files/archive.tar.gz", None),
+            "archive.tar.gz"
+        );
+    }
+
+    #[test]
+    fn suggested_name_falls_back_to_bin() {
+        assert_eq!(
+            suggested_export_filename("demo/data", None),
+            "demo_data.bin"
+        );
+        assert_eq!(suggested_export_filename("", None), "payload.bin");
+        // dot-segment that isn't a real extension (empty stem / weird ext)
+        assert_eq!(
+            suggested_export_filename("demo/.hidden", None),
+            "demo_.hidden.bin"
+        );
+        assert_eq!(suggested_export_filename("v1.2/x", None), "v1.2_x.bin");
     }
 
     #[test]

@@ -117,6 +117,7 @@ pub trait TopicTreeUI {
         parent_path: String,
         depth: usize,
     );
+    fn save_topic_to_file(&mut self, topic: &str);
 }
 
 impl TopicTreeUI for ZenohExplorer {
@@ -276,25 +277,52 @@ impl TopicTreeUI for ZenohExplorer {
         if let Some(ref topic) = self.selected_topic.clone() {
             ui.heading(topic);
 
-            // Action buttons: Export and Pause/Resume
+            // Action buttons: Save and Pause/Resume
             ui.horizontal(|ui| {
-                // Export button with subtle styling
-                // NOTE: Exports FULL payload from payload_store (not truncated tree/UI version)
-                // For chunked payloads, reassembles chunks from topic/__chunk/...
-                if ui
-                    .button("Export Payload")
-                    .on_hover_text("Save full payload to file (original size)")
-                    .clicked()
-                {
-                    let result = self
-                        .payload_store
-                        .read()
-                        .map_err(|_| "Payload store lock poisoned".to_string())
-                        .and_then(|store| transfer::get_payload_for_export(&store, topic));
-                    match result {
-                        Ok(payload) => transfer::export_payload_to_file(topic, &payload.bytes),
-                        Err(e) => self.ui_alert = Some(format!("Export failed: {}", e)),
+                // Save availability: direct payload or a complete chunk set
+                let (saveable, size, reason) = {
+                    let store = self.payload_store.read().ok();
+                    let direct = store
+                        .as_ref()
+                        .and_then(|s| s.get(topic.as_str()))
+                        .map(|e| e.bytes.len());
+                    match direct {
+                        Some(len) => (true, Some(len), String::new()),
+                        None => match store
+                            .as_ref()
+                            .and_then(|s| transfer::chunk_progress(s, topic))
+                        {
+                            Some(p) if p.received == p.total_chunks => {
+                                (true, Some(p.total_size), String::new())
+                            }
+                            Some(p) => (
+                                false,
+                                None,
+                                format!("Waiting for {} more chunks", p.total_chunks - p.received),
+                            ),
+                            None => (false, None, "No payload stored yet".to_string()),
+                        },
                     }
+                };
+                let label = match size {
+                    Some(s) => format!("💾 Save File ({})", transfer::format_size(s)),
+                    None => "💾 Save File".to_string(),
+                };
+                let button = egui::Button::new(RichText::new(&label).color(egui::Color32::WHITE))
+                    .fill(if self.dark_mode {
+                        ExplorerColors::DARK_PRIMARY
+                    } else {
+                        ExplorerColors::PRIMARY
+                    });
+                let response = ui.add_enabled(saveable, button);
+                let response = if saveable {
+                    response.on_hover_text("Save full payload to file (original size)")
+                } else {
+                    response.on_disabled_hover_text(reason)
+                };
+                if response.clicked() {
+                    let topic_owned = topic.clone();
+                    self.save_topic_to_file(&topic_owned);
                 }
 
                 // Pause/Resume button with animated indicator
@@ -379,10 +407,16 @@ impl TopicTreeUI for ZenohExplorer {
                     ));
                 });
                 if received == total {
-                    ui.label(
-                        RichText::new("✓ All chunks received — ready to save")
-                            .color(ExplorerColors::SUCCESS),
-                    );
+                    ui.horizontal(|ui| {
+                        ui.label(
+                            RichText::new("✓ All chunks received — ready to save")
+                                .color(ExplorerColors::SUCCESS),
+                        );
+                        if ui.small_button("💾 Save").clicked() {
+                            let topic_owned = topic.clone();
+                            self.save_topic_to_file(&topic_owned);
+                        }
+                    });
                 } else {
                     ui.label(
                         RichText::new(format!(
@@ -640,6 +674,16 @@ impl TopicTreeUI for ZenohExplorer {
                     }
                 }
 
+                // Quick save on rows with an exportable payload
+                let exportable = node.transfer.as_ref().is_some_and(|t| t.is_complete())
+                    || self
+                        .payload_store
+                        .read()
+                        .is_ok_and(|s| s.contains_key(&full_path));
+                if exportable && ui.small_button("💾").on_hover_text("Save file").clicked() {
+                    self.save_topic_to_file(&full_path);
+                }
+
                 // Show message count with leader line (always dashed/collapsed-style for leaves)
                 leader_line_with_count(ui, false, node.message_count, self.text_tertiary_color());
             });
@@ -719,6 +763,30 @@ impl TopicTreeUI for ZenohExplorer {
                     self.show_tree_node(ui, child, full_path.clone(), depth + 1);
                 }
             });
+        }
+    }
+
+    /// Run the full save flow for a topic: fetch/reassemble, native dialog,
+    /// write — surfacing any failure in the global alert banner.
+    fn save_topic_to_file(&mut self, topic: &str) {
+        let result = self
+            .payload_store
+            .read()
+            .map_err(|_| "Payload store lock poisoned".to_string())
+            .and_then(|store| transfer::get_payload_for_export(&store, topic));
+        match result {
+            Ok(payload) => {
+                let suggested =
+                    transfer::suggested_export_filename(topic, payload.filename.as_deref());
+                match transfer::export_payload_to_file(&suggested, &payload.bytes) {
+                    Ok(Some(path)) => {
+                        self.ui_alert = Some(format!("✓ Saved to {}", path.display()));
+                    }
+                    Ok(None) => {} // user cancelled
+                    Err(e) => self.ui_alert = Some(format!("Save failed: {}", e)),
+                }
+            }
+            Err(e) => self.ui_alert = Some(format!("Save failed: {}", e)),
         }
     }
 }
