@@ -56,6 +56,8 @@ pub struct ZenohNode {
     pub last_payload: Option<String>,
     pub last_encoding: Option<String>,
     pub is_local: bool, // True if this key was published from this app instance
+    /// Number of leaf nodes in the subtree rooted at this node (self counts as 1 when childless).
+    pub cumulative_leaves: usize,
 }
 
 impl ZenohNode {
@@ -69,7 +71,43 @@ impl ZenohNode {
             last_payload: None,
             last_encoding: None,
             is_local: false,
+            cumulative_leaves: 1, // Every node starts as its own leaf
         }
+    }
+
+    /// Insert a key path, creating nodes as needed, and return the leaf node.
+    /// Maintains `cumulative_leaves` (count of leaf nodes in each subtree)
+    /// incrementally: ancestors gain +1 only when a genuinely new leaf is
+    /// attached under a node that already had children. (A leaf converting to
+    /// a branch keeps subtree leaf-count unchanged: itself out, new leaf in.)
+    pub fn insert_path(&mut self, key: &str) -> &mut ZenohNode {
+        let parts: Vec<&str> = key.split('/').filter(|p| !p.is_empty()).collect();
+
+        // Find the first missing segment and whether its parent had children.
+        let mut probe: &ZenohNode = self;
+        let mut divergence: Option<usize> = None;
+        for (i, part) in parts.iter().enumerate() {
+            match probe.children.get(*part) {
+                Some(child) => probe = child,
+                None => {
+                    divergence = Some(i);
+                    break;
+                }
+            }
+        }
+        let bump = divergence.is_some() && !probe.children.is_empty();
+
+        let mut node = self;
+        for (i, part) in parts.iter().enumerate() {
+            if bump && divergence.is_some_and(|d| i <= d) {
+                node.cumulative_leaves += 1;
+            }
+            node = node
+                .children
+                .entry(part.to_string())
+                .or_insert_with(|| ZenohNode::new(part.to_string()));
+        }
+        node
     }
 
     /// Updates the node with new message data.
@@ -477,5 +515,41 @@ mod tests {
         d.record(h);
         std::thread::sleep(Duration::from_millis(5));
         assert!(!d.seen_recently(h));
+    }
+
+    #[test]
+    fn insert_path_counts_leaves() {
+        let mut root = ZenohNode::new("root".into());
+        root.insert_path("a/b");
+        root.insert_path("a/c");
+        root.insert_path("d");
+        assert_eq!(root.cumulative_leaves, 3);
+        assert_eq!(root.children["a"].cumulative_leaves, 2);
+        // repeat message to existing leaf: no change
+        root.insert_path("a/b");
+        assert_eq!(root.cumulative_leaves, 3);
+    }
+
+    #[test]
+    fn insert_path_leaf_to_branch_conversion() {
+        let mut root = ZenohNode::new("root".into());
+        root.insert_path("a");
+        root.insert_path("x");
+        assert_eq!(root.cumulative_leaves, 2);
+        // "a" stops being a leaf; "a/b" becomes the leaf — net zero above "a"
+        root.insert_path("a/b");
+        assert_eq!(root.cumulative_leaves, 2);
+        assert_eq!(root.children["a"].cumulative_leaves, 1);
+    }
+
+    #[test]
+    fn insert_path_returns_leaf_node() {
+        let mut root = ZenohNode::new("root".into());
+        let leaf = root.insert_path("x/y/z");
+        assert_eq!(leaf.key, "z");
+        // empty segments are skipped
+        let leaf2 = root.insert_path("x//y/z");
+        assert_eq!(leaf2.key, "z");
+        assert_eq!(root.cumulative_leaves, 1);
     }
 }

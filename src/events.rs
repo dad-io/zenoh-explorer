@@ -227,21 +227,7 @@ impl ZenohExplorer {
     /// Creates parent nodes as needed to maintain the tree structure.
     pub(crate) fn add_message_to_browse_tree(&self, message: &ZenohMessage) {
         if let Ok(mut tree) = self.browse_tree.write() {
-            // Split the key into path segments
-            let parts: Vec<&str> = message.key.split('/').collect();
-            let mut current_node = &mut *tree;
-
-            // Navigate through the tree, creating nodes as needed
-            for part in parts {
-                if !part.is_empty() {
-                    // We need to work around the borrow checker here
-                    let part_string = part.to_string();
-                    current_node = current_node
-                        .children
-                        .entry(part_string.clone())
-                        .or_insert_with(|| ZenohNode::new(part_string));
-                }
-            }
+            let current_node = tree.insert_path(&message.key);
 
             // DUAL-PATH STORAGE:
             // 1. Full payload -> payload_store (for export)
