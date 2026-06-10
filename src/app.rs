@@ -52,6 +52,7 @@ pub struct ZenohExplorer {
     pub(crate) message_filter: String,
     pub(crate) auto_scroll: bool,
     pub(crate) query_alert: Option<String>,
+    pub(crate) ui_alert: Option<String>,
     pub(crate) messages_dropped: usize,
     pub(crate) rate_limiter: RateLimiter,
     pub(crate) rate_limit_drops: usize,
@@ -145,6 +146,7 @@ impl ZenohExplorer {
             message_filter: String::new(),
             auto_scroll: true,
             query_alert: None,
+            ui_alert: None,
             messages_dropped: 0,
             rate_limiter: RateLimiter::new(1000),
             rate_limit_drops: 0,
@@ -622,6 +624,21 @@ impl eframe::App for ZenohExplorer {
                 }
 
                 ui.separator();
+
+                // Global alert banner (export errors, warnings) — visible on every tab
+                if let Some(alert_text) = self.ui_alert.clone() {
+                    egui::TopBottomPanel::top("alert_banner").show_inside(ui, |ui| {
+                        ui.horizontal(|ui| {
+                            ui.label(
+                                RichText::new(format!("⚠ {}", alert_text))
+                                    .color(ExplorerColors::WARNING),
+                            );
+                            if ui.small_button("✖").clicked() {
+                                self.ui_alert = None;
+                            }
+                        });
+                    });
+                }
 
                 // Main split-panel layout
                 egui::TopBottomPanel::top("toolbar").show_inside(ui, |ui| {
