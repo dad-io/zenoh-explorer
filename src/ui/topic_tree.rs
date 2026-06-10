@@ -24,7 +24,6 @@ pub trait TopicTreeUI {
         parent_path: String,
         depth: usize,
     );
-    fn has_matching_descendant(&self, node: &ZenohNode, filter: &str, current_path: &str) -> bool;
 }
 
 impl TopicTreeUI for ZenohExplorer {
@@ -103,6 +102,21 @@ impl TopicTreeUI for ZenohExplorer {
             } else {
                 ZenohNode::new("root".to_string())
             };
+
+            let filter_lower = self.tree_filter.to_lowercase();
+            if !filter_lower.is_empty() {
+                let stale = self
+                    .tree_filter_cache
+                    .as_ref()
+                    .is_none_or(|(q, v, _)| *q != filter_lower || *v != self.tree_version);
+                if stale {
+                    let visible = compute_visible_paths(&tree_clone, &filter_lower);
+                    self.tree_filter_cache =
+                        Some((filter_lower.clone(), self.tree_version, visible));
+                }
+            } else {
+                self.tree_filter_cache = None;
+            }
 
             egui::ScrollArea::vertical()
                 .auto_shrink([false; 2])
@@ -444,12 +458,10 @@ impl TopicTreeUI for ZenohExplorer {
             format!("{}/{}", parent_path, node.key)
         };
 
-        // Apply filter
-        if !self.tree_filter.is_empty() && !full_path.contains(&self.tree_filter) {
-            // Check if any children match
-            let has_matching_child =
-                self.has_matching_descendant(node, &self.tree_filter, &full_path);
-            if !has_matching_child {
+        // Apply filter via the precomputed visible-path set (deep match:
+        // ancestors of matches and subtrees of matching branches stay visible)
+        if let Some((_, _, visible)) = &self.tree_filter_cache {
+            if !visible.contains(&full_path) {
                 return;
             }
         }
@@ -514,11 +526,19 @@ impl TopicTreeUI for ZenohExplorer {
             });
         } else {
             // Branch node - collapsible with consistent spacing
-            let id = egui::Id::new(format!("treenode_{}", full_path));
+            // While filtering, branches render expanded under a separate ID
+            // namespace so the user's normal expand/collapse state is bypassed,
+            // not overwritten; clearing the filter restores it.
+            let filtering = self.tree_filter_cache.is_some();
+            let id = if filtering {
+                egui::Id::new(("treenode_filtered", &full_path))
+            } else {
+                egui::Id::new(("treenode", &full_path))
+            };
             let state = egui::collapsing_header::CollapsingState::load_with_default_open(
                 ui.ctx(),
                 id,
-                false,
+                filtering,
             );
 
             let header_response = state.show_header(ui, |ui| {
@@ -569,21 +589,5 @@ impl TopicTreeUI for ZenohExplorer {
                 }
             });
         }
-    }
-
-    /// Check if node or any descendant matches filter
-    fn has_matching_descendant(&self, node: &ZenohNode, filter: &str, current_path: &str) -> bool {
-        if current_path.contains(filter) {
-            return true;
-        }
-
-        for (key, child) in &node.children {
-            let child_path = format!("{}/{}", current_path, key);
-            if self.has_matching_descendant(child, filter, &child_path) {
-                return true;
-            }
-        }
-
-        false
     }
 }

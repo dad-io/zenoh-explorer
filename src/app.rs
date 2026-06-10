@@ -70,12 +70,10 @@ pub struct ZenohExplorer {
     pub(crate) expanded_payloads: std::collections::HashSet<String>,
     pub(crate) payload_store: Arc<RwLock<PayloadStoreMap>>,
     /// Monotonic counter incremented whenever the browse tree changes; used by
-    /// Task 12's filter cache to detect staleness. Written here; reads come next task.
-    #[allow(dead_code)]
+    /// the filter cache to detect staleness.
     pub(crate) tree_version: u64,
     /// Cache for the visible-path set: (lowercased filter, tree_version, visible set).
-    /// Populated and read by Task 13's rendering; stored here so it survives frames.
-    #[allow(dead_code)]
+    /// Populated and read by filter rendering; stored here so it survives frames.
     pub(crate) tree_filter_cache: Option<(String, u64, std::collections::HashSet<String>)>,
 }
 

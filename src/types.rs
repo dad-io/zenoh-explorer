@@ -519,7 +519,6 @@ impl RateLimiter {
 /// (lowercased) substring filter. A node is visible if its full path matches
 /// or any descendant's does; since child paths contain the parent path as a
 /// prefix, a matching branch automatically keeps its whole subtree visible.
-#[allow(dead_code)]
 pub fn compute_visible_paths(
     root: &ZenohNode,
     filter_lower: &str,
