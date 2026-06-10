@@ -13,6 +13,51 @@ use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 use tracing::info;
 
+/// Publish-side chunk size (must match zenoh_worker.rs CHUNK_SIZE).
+#[allow(dead_code)]
+pub const CHUNK_SIZE: usize = 64 * 1024 * 1024;
+
+/// Metadata parsed from a chunk key `{topic}/__chunk/{total_size}/{total_chunks}/{index}`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[allow(dead_code)]
+pub struct ChunkMeta {
+    pub total_size: usize,
+    pub total_chunks: usize,
+    pub index: usize,
+}
+
+impl ChunkMeta {
+    /// Values come from a network-controlled key string — reject anything that
+    /// could drive an absurd allocation or out-of-range index.
+    #[allow(dead_code)]
+    pub fn is_sane(&self) -> bool {
+        self.total_chunks > 0
+            && self.index < self.total_chunks
+            && self.total_size <= self.total_chunks.saturating_mul(CHUNK_SIZE)
+    }
+}
+
+/// Split a chunk key into (topic, meta). Returns None for non-chunk keys.
+#[allow(dead_code)]
+pub fn parse_chunk_key(key: &str) -> Option<(&str, ChunkMeta)> {
+    let (topic, suffix) = key.split_once("/__chunk/")?;
+    let mut parts = suffix.split('/');
+    let total_size = parts.next()?.parse().ok()?;
+    let total_chunks = parts.next()?.parse().ok()?;
+    let index = parts.next()?.parse().ok()?;
+    if parts.next().is_some() {
+        return None;
+    }
+    Some((
+        topic,
+        ChunkMeta {
+            total_size,
+            total_chunks,
+            index,
+        },
+    ))
+}
+
 /// Chunk info returned by `get_chunk_info`: (received_count, total_expected, total_file_size)
 pub type ChunkInfo = (usize, usize, usize);
 
@@ -166,5 +211,64 @@ pub fn format_size(size: usize) -> String {
         format!("{:.2} MB", size as f64 / (1024.0 * 1024.0))
     } else {
         format!("{} bytes", size)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_chunk_key_valid() {
+        let (topic, m) = parse_chunk_key("demo/file/__chunk/8589934592/128/7").unwrap();
+        assert_eq!(topic, "demo/file");
+        assert_eq!(
+            m,
+            ChunkMeta {
+                total_size: 8589934592,
+                total_chunks: 128,
+                index: 7
+            }
+        );
+    }
+
+    #[test]
+    fn parse_chunk_key_rejects_malformed() {
+        assert!(parse_chunk_key("demo/file").is_none());
+        assert!(parse_chunk_key("demo/file/__chunk/abc/2/0").is_none());
+        assert!(parse_chunk_key("demo/file/__chunk/100/2").is_none()); // missing index
+        assert!(parse_chunk_key("demo/file/__chunk/100/2/0/extra").is_none());
+    }
+
+    #[test]
+    fn chunk_meta_sanity() {
+        // index out of range
+        assert!(!ChunkMeta {
+            total_size: 100,
+            total_chunks: 2,
+            index: 2
+        }
+        .is_sane());
+        // zero chunks
+        assert!(!ChunkMeta {
+            total_size: 100,
+            total_chunks: 0,
+            index: 0
+        }
+        .is_sane());
+        // total_size exceeds what total_chunks could carry (allocation bomb)
+        assert!(!ChunkMeta {
+            total_size: usize::MAX,
+            total_chunks: 2,
+            index: 0
+        }
+        .is_sane());
+        // normal
+        assert!(ChunkMeta {
+            total_size: 100 * 1024 * 1024,
+            total_chunks: 2,
+            index: 1
+        }
+        .is_sane());
     }
 }
