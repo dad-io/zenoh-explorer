@@ -16,6 +16,9 @@ paths found in a full application review.
    case-insensitive deep-match filtering, auto-expand on search, counts at
    every level with leader lines, a five-icon system, and chunk-aware
    transfer nodes.
+3. Make saving a received file obvious and lossless: a prominent Save
+   action wherever a payload is exportable, and original filenames /
+   extensions preserved end-to-end instead of force-appending `.bin`.
 
 ## Non-Goals (recommended follow-ups, separate efforts)
 
@@ -151,7 +154,7 @@ never restores.)
 ### 2d. Icon system
 
 | Icon | Applies to |
-|------|-----------|
+| ---- | ---------- |
 | 🗄️ | Top-level root nodes (depth 0) |
 | 📁 | Branch nodes |
 | 📦 | Binary-payload leaves |
@@ -176,6 +179,56 @@ case that lies (chunk subtrees).
 - `__chunk` messages are excluded from the messages list (today a 128-chunk
   transfer floods the 500-message display).
 
+## Phase 3 — Export UX & filename persistence (`src/transfer.rs`, `src/ui/topic_tree.rs`, `src/zenoh_worker.rs`, `src/events.rs`)
+
+### 3a. Filename transmission
+
+The sender already knows the imported file's name
+(`publish_payload_filename`, captured at import) but never transmits it, so
+receivers can only guess from the topic key.
+
+- On publish of an imported file, attach the original filename as a Zenoh
+  **attachment** on the `put` (zenoh 1.0 supports attachments). For chunked
+  publishes, the attachment rides on every chunk (cheap, makes any chunk
+  sufficient to learn the name).
+- The receive path reads `sample.attachment()` and stores the filename
+  alongside the bytes. `payload_store`'s value becomes a small struct
+  (`PayloadEntry { bytes, received_at, filename: Option<String> }`) —
+  coordinated with 1a, which already restructures this storage for
+  eviction.
+
+### 3b. Suggested filename & extension preservation
+
+Export must never blindly append `.bin`. Suggested-name resolution order:
+
+1. Original filename from the transmitted attachment (3a).
+2. If the topic's last segment contains an extension (e.g.
+   `files/report.pdf`), use that segment verbatim.
+3. Fallback only: `topic_with_underscores.bin`.
+
+The save-dialog filter list is built dynamically: when an extension is
+known, the first filter matches it (e.g. "PDF files (*.pdf)") followed by
+"All Files" — never a leading "Binary Files (*.bin)" filter that platforms
+use to force-append `.bin`.
+
+### 3c. Export discoverability
+
+Today export is a plain, unlabeled-by-intent "Export Payload" button inside
+the topic-details panel only, and chunk completion says "click Export to
+reassemble" without offering the button.
+
+- Replace it with a prominent primary-styled **"💾 Save File (X.XX GB)"**
+  button (accent fill, size included in the label) at the top of topic
+  details. When the payload is unavailable or chunks are incomplete, the
+  button is disabled with a tooltip explaining why ("waiting for 12 more
+  chunks").
+- The "✓ All chunks received" completion row gets an inline Save button.
+- Tree rows that have an exportable payload (and Phase 2e transfer nodes)
+  show a small 💾 action on hover/selection, so saving doesn't require
+  finding the details panel.
+- Failures (incomplete, length mismatch, fs error) surface as alerts per
+  Phase 1b — a failed save must never look identical to a successful one.
+
 ## Error handling summary
 
 - Export failures (incomplete group, length mismatch, fs write error)
@@ -188,5 +241,8 @@ case that lies (chunk subtrees).
 
 Phase 1 logic is covered by the unit tests in 1e. Phase 2's visible-set
 computation gets unit tests (match → ancestors visible; no match → hidden;
-case-insensitivity). Rendering is verified manually (`cargo run` against a
+case-insensitivity). Phase 3's suggested-name resolution is pure logic and
+gets unit tests (attachment wins; last-segment extension preserved without
+`.bin`; underscore fallback only when no extension is known). Rendering and
+the attachment round-trip are verified manually (`cargo run` against a
 local zenoh router with a chunked transfer).
