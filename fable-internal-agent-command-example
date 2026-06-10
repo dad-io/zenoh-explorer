@@ -1,0 +1,4 @@
+# Check if there's a topic that contains "/__chunk/" as a plain topic (the filter ambiguity)
+# Specifically: can a real plain topic key contain "/__chunk/" in it?
+# Look at how topic keys are formed
+grep -n "__chunk__\|/__chunk\|chunk_key\|topic.*contains" /Users/samelsner/Documents/github/zenoh-explorer/src/transfer.rs | head -20

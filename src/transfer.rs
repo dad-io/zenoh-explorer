@@ -179,6 +179,7 @@ pub fn get_payload_for_export(
             if t == topic
                 && m.total_size == progress.total_size
                 && m.total_chunks == progress.total_chunks
+                && m.is_sane()
             {
                 by_index.insert(m.index, e);
             }
@@ -476,5 +477,15 @@ mod tests {
         store.insert("t".into(), entry(1));
         store.insert("other/__chunk/100/1/0".into(), entry(1));
         assert!(chunk_progress(&store, "t").is_none());
+    }
+
+    #[test]
+    fn export_ignores_out_of_range_indices() {
+        let mut store = PayloadStoreMap::new();
+        // direct inserts bypass insert_payload's sanity gate
+        store.insert("t/__chunk/6/2/0".into(), entry_with(vec![1, 2, 3], 1));
+        store.insert("t/__chunk/6/2/5".into(), entry_with(vec![4, 5, 6], 2)); // index 5 of 2 — insane
+        let err = get_payload_for_export(&store, "t").unwrap_err();
+        assert!(err.contains("1 of 2"), "got: {err}");
     }
 }
