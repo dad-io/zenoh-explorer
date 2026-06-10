@@ -11,6 +11,56 @@ use crate::ui::messages::MessagesUI;
 use crate::ui::publish::PublishUI;
 use crate::ui::query::QueryUI;
 
+/// Draw a leader line (dashed when collapsed, solid when expanded) filling the
+/// space between the label and a right-aligned tabular count.
+fn leader_line_with_count(
+    ui: &mut egui::Ui,
+    expanded: bool,
+    count: usize,
+    text_color: egui::Color32,
+) {
+    if count == 0 {
+        return;
+    }
+    let count_text = count.to_string();
+    let font = egui::FontId::proportional(TEXT_SMALL_SIZE);
+    let galley = ui
+        .painter()
+        .layout_no_wrap(count_text.clone(), font, text_color);
+    let line_w = (ui.available_width() - galley.size().x - 16.0).max(0.0);
+    let (rect, _) = ui.allocate_exact_size(
+        egui::vec2(line_w, ui.spacing().interact_size.y),
+        egui::Sense::hover(),
+    );
+    let y = rect.center().y;
+    let (alpha, dashed) = if expanded { (100, false) } else { (64, true) };
+    let stroke = egui::Stroke::new(
+        1.0,
+        egui::Color32::from_rgba_unmultiplied(
+            text_color.r(),
+            text_color.g(),
+            text_color.b(),
+            alpha,
+        ),
+    );
+    let a = egui::pos2(rect.left() + 4.0, y);
+    let b = egui::pos2(rect.right() - 4.0, y);
+    if rect.width() > 12.0 {
+        if dashed {
+            for shape in egui::Shape::dashed_line(&[a, b], stroke, 3.0, 3.0) {
+                ui.painter().add(shape);
+            }
+        } else {
+            ui.painter().line_segment([a, b], stroke);
+        }
+    }
+    ui.label(
+        egui::RichText::new(count_text)
+            .size(TEXT_SMALL_SIZE)
+            .color(text_color),
+    );
+}
+
 /// Trait for topic tree and detail rendering.
 pub trait TopicTreeUI {
     fn show_tree_panel(&mut self, ui: &mut egui::Ui);
@@ -148,6 +198,20 @@ impl TopicTreeUI for ZenohExplorer {
                     } else {
                         for child in tree_clone.children.values() {
                             self.show_tree_node(ui, child, String::new(), 0);
+                        }
+                        if self
+                            .tree_filter_cache
+                            .as_ref()
+                            .is_some_and(|(_, _, v)| v.is_empty())
+                        {
+                            ui.vertical_centered(|ui| {
+                                ui.add_space(16.0);
+                                ui.label(
+                                    egui::RichText::new("No topics match the filter")
+                                        .italics()
+                                        .color(self.text_secondary_color()),
+                                );
+                            });
                         }
                     }
                 });
@@ -500,16 +564,7 @@ impl TopicTreeUI for ZenohExplorer {
                     self.detail_view = DetailView::TopicDetails;
                 }
 
-                // Show message count badge
-                if node.message_count > 0 {
-                    ui.label(
-                        RichText::new(format!("({})", node.message_count))
-                            .size(TEXT_SMALL_SIZE)
-                            .color(ExplorerColors::PRIMARY),
-                    );
-                }
-
-                // Show preview of last value
+                // Show preview of last value (before leader line so count sits at right edge)
                 if let Some(ref payload) = node.last_payload {
                     let preview = if payload.len() > 30 {
                         let end = safe_truncate_index(payload, 30);
@@ -523,6 +578,9 @@ impl TopicTreeUI for ZenohExplorer {
                             .color(self.text_secondary_color()),
                     );
                 }
+
+                // Show message count with leader line (always dashed/collapsed-style for leaves)
+                leader_line_with_count(ui, false, node.message_count, self.text_tertiary_color());
             });
         } else {
             // Branch node - collapsible with consistent spacing
@@ -540,6 +598,9 @@ impl TopicTreeUI for ZenohExplorer {
                 id,
                 filtering,
             );
+            let expanded = state.is_open();
+            let tertiary = self.text_tertiary_color();
+            let cumulative_leaves = node.cumulative_leaves;
 
             let header_response = state.show_header(ui, |ui| {
                 ui.horizontal(|ui| {
@@ -574,12 +635,8 @@ impl TopicTreeUI for ZenohExplorer {
                         self.detail_view = DetailView::TopicDetails;
                     }
 
-                    // Show child count
-                    ui.label(
-                        RichText::new(format!("({})", node.children.len()))
-                            .size(TEXT_SMALL_SIZE)
-                            .color(self.text_tertiary_color()),
-                    );
+                    // Show descendant leaf count with leader line
+                    leader_line_with_count(ui, expanded, cumulative_leaves, tertiary);
                 });
             });
 
