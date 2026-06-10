@@ -62,6 +62,8 @@ pub fn parse_chunk_key(key: &str) -> Option<(&str, ChunkMeta)> {
 /// - chunk keys: purge any stale-generation chunks for the same topic, never
 ///   evict other entries, drop entries with insane metadata
 /// - plain keys: evict the oldest plain entry once the cap is reached
+///
+/// Assumes "/__chunk/" is a reserved infix never used in plain topic names.
 pub fn insert_payload(store: &mut PayloadStoreMap, key: String, entry: PayloadEntry) {
     if let Some((topic, meta)) = parse_chunk_key(&key) {
         if !meta.is_sane() {
@@ -379,5 +381,18 @@ mod tests {
             index: 1
         }
         .is_sane());
+    }
+
+    #[test]
+    fn update_at_cap_does_not_evict() {
+        let mut store = PayloadStoreMap::new();
+        for i in 0..MAX_PLAIN_ENTRIES {
+            store.insert(format!("topic/{}", i), entry(1000 + i as i64));
+        }
+        // Overwrite topic/0 (already present) — should not evict any other entry
+        insert_payload(&mut store, "topic/0".into(), entry(2000));
+        assert_eq!(store.len(), MAX_PLAIN_ENTRIES);
+        assert!(store.contains_key("topic/0")); // still present, updated
+        assert!(store.contains_key("topic/1")); // nothing else evicted
     }
 }
