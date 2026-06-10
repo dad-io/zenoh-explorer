@@ -32,9 +32,9 @@ impl HelpUI for ZenohExplorer {
         ui.label(
             "3. Use Publish tab to send data. Enter text or import files of any size or type.",
         );
-        ui.label("5. Use Browse tab to explore the keyspace tree and see live updates");
-        ui.label("6. Use Messages tab to see all messaging activity");
-        ui.label("4. Enable simple Queryables service (optional, respond to queries for items in keyspace)");
+        ui.label("4. Use Browse tab to explore the keyspace tree and see live updates");
+        ui.label("5. Use Messages tab to see all messaging activity");
+        ui.label("6. Enable simple Queryables service (optional, respond to queries for items in keyspace)");
 
         ui.separator();
         ui.label(RichText::new("Connection Modes:").strong());
@@ -52,6 +52,6 @@ impl HelpUI for ZenohExplorer {
         ui.label(RichText::new("Performance Tips:").strong());
         ui.label("• Adjust memory limit in Messages tab (default: 100MB)");
         ui.label("• Older messages are dropped when limits are exceeded");
-        ui.label("• All messages greater than 10MB are displayed with trunctation");
+        ui.label("• All messages greater than 10MB are displayed with truncation");
     }
 }
