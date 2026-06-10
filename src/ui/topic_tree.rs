@@ -557,7 +557,16 @@ impl TopicTreeUI for ZenohExplorer {
                         .on_hover_text("Published from this app");
                 }
 
-                let response = ui.selectable_label(is_selected, format!("📄 {}", node.key));
+                let icon = if node.transfer.is_some() {
+                    "📥"
+                } else {
+                    leaf_icon(
+                        &full_path,
+                        node.last_encoding.as_deref(),
+                        node.last_payload.as_deref(),
+                    )
+                };
+                let response = ui.selectable_label(is_selected, format!("{} {}", icon, node.key));
 
                 if response.clicked() {
                     self.selected_topic = Some(full_path.clone());
@@ -628,7 +637,9 @@ impl TopicTreeUI for ZenohExplorer {
                             .on_hover_text("Published from this app");
                     }
 
-                    let response = ui.selectable_label(is_selected, format!("📁 {}", node.key));
+                    let icon = if depth == 0 { "🌐" } else { "📡" };
+                    let response =
+                        ui.selectable_label(is_selected, format!("{} {}", icon, node.key));
 
                     if response.clicked() {
                         self.selected_topic = Some(full_path.clone());
@@ -646,5 +657,54 @@ impl TopicTreeUI for ZenohExplorer {
                 }
             });
         }
+    }
+}
+
+/// Icon bucket for leaf topics — zenoh/embedded/automation themed:
+/// 🛠 system (@/ zenoh admin space), 🏷 text/JSON (live KV telemetry),
+/// 💾 binary/unknown (firmware/blobs). Prefers the declared encoding, falls
+/// back to the payload preview heuristic (binary previews start with "[binary").
+pub(crate) fn leaf_icon(
+    full_path: &str,
+    encoding: Option<&str>,
+    last_payload: Option<&str>,
+) -> &'static str {
+    if full_path.starts_with('@') {
+        return "🛠";
+    }
+    if let Some(enc) = encoding {
+        let e = enc.to_ascii_lowercase();
+        if e.contains("json") || e.starts_with("text/") {
+            return "🏷";
+        }
+        if e.contains("octet-stream") {
+            return "💾";
+        }
+    }
+    match last_payload {
+        Some(p) if p.starts_with("[binary") => "💾",
+        Some(_) => "🏷",
+        None => "💾",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn leaf_icons_bucket_correctly() {
+        assert_eq!(leaf_icon("@/session/x", None, None), "🛠");
+        assert_eq!(leaf_icon("demo/t", Some("application/json"), None), "🏷");
+        assert_eq!(leaf_icon("demo/t", Some("text/plain"), Some("hello")), "🏷");
+        assert_eq!(
+            leaf_icon("demo/t", Some("application/octet-stream"), None),
+            "💾"
+        );
+        assert_eq!(
+            leaf_icon("demo/t", None, Some("[binary 1024 bytes] ff 00")),
+            "💾"
+        );
+        assert_eq!(leaf_icon("demo/t", None, None), "💾");
     }
 }
