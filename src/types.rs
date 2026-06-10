@@ -55,8 +55,6 @@ pub struct TransferState {
 
 impl TransferState {
     /// Returns true when all chunks have been received.
-    /// Read by Task 12's UI rendering; written suppression needed until then.
-    #[allow(dead_code)]
     pub fn is_complete(&self) -> bool {
         self.received.len() == self.total_chunks
     }
