@@ -86,6 +86,21 @@ impl ZenohNode {
     }
 }
 
+/// A stored payload: full raw bytes plus receive metadata.
+#[derive(Debug, Clone)]
+pub struct PayloadEntry {
+    pub bytes: Vec<u8>,
+    /// When this payload was received from the network.
+    #[allow(dead_code)]
+    pub received_at: DateTime<Utc>,
+    /// Original filename transmitted by the sender (Zenoh attachment), if any.
+    #[allow(dead_code)]
+    pub filename: Option<String>,
+}
+
+/// The export store map. Keyed by full topic (or chunk) key.
+pub type PayloadStoreMap = std::collections::HashMap<String, PayloadEntry>;
+
 /// Manages the lifecycle of an active Zenoh subscription.
 /// Includes the async task handle and a cancellation mechanism for clean shutdown.
 pub struct ActiveSubscription {

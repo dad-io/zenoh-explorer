@@ -8,10 +8,10 @@
 //! - CHUNK_SIZE = 64MB (publish side, in zenoh_worker.rs)
 //! - MAX_SINGLE_PAYLOAD = u32::MAX ~4GB (publish side, in zenoh_worker.rs)
 
-use chrono::{DateTime, Utc};
-use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 use tracing::info;
+
+use crate::types::PayloadStoreMap;
 
 /// Publish-side chunk size (must match zenoh_worker.rs CHUNK_SIZE).
 #[allow(dead_code)]
@@ -65,9 +65,8 @@ pub type ChunkInfo = (usize, usize, usize);
 ///
 /// Looks for keys matching `{topic}/__chunk/{total_size}/{total_chunks}/{chunk_index}`
 /// and returns (received_count, total_expected, total_file_size_bytes) or None.
-#[allow(clippy::type_complexity)]
 pub fn get_chunk_info(
-    payload_store: &Arc<RwLock<HashMap<String, (Vec<u8>, DateTime<Utc>)>>>,
+    payload_store: &Arc<RwLock<PayloadStoreMap>>,
     topic: &str,
 ) -> Option<ChunkInfo> {
     if let Ok(store) = payload_store.read() {
@@ -108,22 +107,22 @@ pub fn get_chunk_info(
 ///    sorts by chunk_index, verifies completeness, concatenates.
 ///
 /// Returns the full payload bytes or None if unavailable/incomplete.
-#[allow(clippy::type_complexity)]
 pub fn get_payload_for_export(
-    payload_store: &Arc<RwLock<HashMap<String, (Vec<u8>, DateTime<Utc>)>>>,
+    payload_store: &Arc<RwLock<PayloadStoreMap>>,
     topic: &str,
 ) -> Option<Vec<u8>> {
     if let Ok(store) = payload_store.read() {
         // First try direct lookup
-        if let Some((payload, _ts)) = store.get(topic) {
-            return Some(payload.clone());
+        if let Some(entry) = store.get(topic) {
+            return Some(entry.bytes.clone());
         }
 
         // Check for chunked payload: look for topic/__chunk/{size}/{count}/{index}
         let chunk_prefix = format!("{}/__chunk/", topic);
         let mut chunks: Vec<(usize, usize, usize, &Vec<u8>)> = Vec::new(); // (total_size, total_chunks, index, data)
 
-        for (key, (data, _ts)) in store.iter() {
+        for (key, entry) in store.iter() {
+            let data = &entry.bytes;
             if key.starts_with(&chunk_prefix) {
                 // Parse: topic/__chunk/{total_size}/{total_chunks}/{chunk_index}
                 let suffix = &key[chunk_prefix.len()..];

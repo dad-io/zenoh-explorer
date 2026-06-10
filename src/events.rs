@@ -336,7 +336,14 @@ impl ZenohExplorer {
                     }
                 }
                 // Store raw bytes for export
-                store.insert(message.key.clone(), (raw_bytes, message.timestamp));
+                store.insert(
+                    message.key.clone(),
+                    PayloadEntry {
+                        bytes: raw_bytes,
+                        received_at: message.timestamp,
+                        filename: None,
+                    },
+                );
             } else {
                 error!(
                     "Failed to acquire payload_store lock for key: {}",

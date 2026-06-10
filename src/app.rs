@@ -69,9 +69,7 @@ pub struct ZenohExplorer {
     pub(crate) paused_keys: std::collections::HashSet<String>,
     pub(crate) json_parse_cache: std::collections::HashMap<u64, Option<String>>,
     pub(crate) expanded_payloads: std::collections::HashSet<String>,
-    #[allow(clippy::type_complexity)]
-    pub(crate) payload_store:
-        Arc<RwLock<HashMap<String, (Vec<u8>, chrono::DateTime<chrono::Utc>)>>>,
+    pub(crate) payload_store: Arc<RwLock<PayloadStoreMap>>,
 }
 
 impl Default for ZenohExplorer {
