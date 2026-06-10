@@ -232,10 +232,15 @@ impl TopicTreeUI for ZenohExplorer {
             });
 
             // Check for chunked payload and show info
-            let chunk_info = transfer::get_chunk_info(&self.payload_store, topic);
+            let chunk_info = self
+                .payload_store
+                .read()
+                .ok()
+                .and_then(|store| transfer::chunk_progress(&store, topic));
 
             // Display chunk info if this is a chunked payload
-            if let Some((received, total, total_size)) = chunk_info {
+            if let Some(p) = chunk_info {
+                let (received, total, total_size) = (p.received, p.total_chunks, p.total_size);
                 ui.horizontal(|ui| {
                     ui.label(
                         RichText::new("📦 Chunked Payload:")

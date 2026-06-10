@@ -8,8 +8,11 @@
 //! - CHUNK_SIZE = 64MB (publish side, in zenoh_worker.rs)
 //! - MAX_SINGLE_PAYLOAD = u32::MAX ~4GB (publish side, in zenoh_worker.rs)
 
+use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, RwLock};
 use tracing::info;
+
+use chrono::{DateTime, Utc};
 
 use crate::types::{PayloadEntry, PayloadStoreMap};
 
@@ -102,46 +105,43 @@ pub fn insert_payload(store: &mut PayloadStoreMap, key: String, entry: PayloadEn
     }
 }
 
-/// Chunk info returned by `get_chunk_info`: (received_count, total_expected, total_file_size)
-pub type ChunkInfo = (usize, usize, usize);
+/// Progress of the newest chunk group for a topic.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ChunkProgress {
+    pub received: usize,
+    pub total_chunks: usize,
+    pub total_size: usize,
+}
 
-/// Scan payload_store for chunk entries matching a topic.
-///
-/// Looks for keys matching `{topic}/__chunk/{total_size}/{total_chunks}/{chunk_index}`
-/// and returns (received_count, total_expected, total_file_size_bytes) or None.
-pub fn get_chunk_info(
-    payload_store: &Arc<RwLock<PayloadStoreMap>>,
-    topic: &str,
-) -> Option<ChunkInfo> {
-    if let Ok(store) = payload_store.read() {
-        let chunk_prefix = format!("{}/__chunk/", topic);
-        let mut chunks: Vec<(usize, usize, usize)> = Vec::new(); // (total_size, total_chunks, index)
-
-        for (key, _) in store.iter() {
-            if key.starts_with(&chunk_prefix) {
-                let suffix = &key[chunk_prefix.len()..];
-                let parts: Vec<&str> = suffix.split('/').collect();
-                if parts.len() == 3 {
-                    if let (Ok(total_size), Ok(total_chunks), Ok(chunk_idx)) = (
-                        parts[0].parse::<usize>(),
-                        parts[1].parse::<usize>(),
-                        parts[2].parse::<usize>(),
-                    ) {
-                        chunks.push((total_size, total_chunks, chunk_idx));
-                    }
+/// Scan the store for chunks of `topic`. Groups by (total_size, total_chunks)
+/// and reports the group with the newest entry — stale generations never
+/// inflate the count.
+pub fn chunk_progress(store: &PayloadStoreMap, topic: &str) -> Option<ChunkProgress> {
+    let prefix = format!("{}/__chunk/", topic);
+    let mut groups: HashMap<(usize, usize), (HashSet<usize>, DateTime<Utc>)> = HashMap::new();
+    for (key, e) in store.iter() {
+        if !key.starts_with(&prefix) {
+            continue;
+        }
+        if let Some((t, m)) = parse_chunk_key(key) {
+            if t == topic && m.is_sane() {
+                let g = groups
+                    .entry((m.total_size, m.total_chunks))
+                    .or_insert_with(|| (Default::default(), e.received_at));
+                g.0.insert(m.index);
+                if e.received_at > g.1 {
+                    g.1 = e.received_at;
                 }
             }
         }
-
-        if !chunks.is_empty() {
-            let (total_size, total_chunks, _) = chunks[0];
-            Some((chunks.len(), total_chunks, total_size))
-        } else {
-            None
-        }
-    } else {
-        None
     }
+    let ((total_size, total_chunks), (indices, _)) =
+        groups.into_iter().max_by_key(|(_, (_, newest))| *newest)?;
+    Some(ChunkProgress {
+        received: indices.len(),
+        total_chunks,
+        total_size,
+    })
 }
 
 /// Attempt to retrieve and reassemble a payload from the store.
@@ -394,5 +394,28 @@ mod tests {
         assert_eq!(store.len(), MAX_PLAIN_ENTRIES);
         assert!(store.contains_key("topic/0")); // still present, updated
         assert!(store.contains_key("topic/1")); // nothing else evicted
+    }
+
+    #[test]
+    fn chunk_progress_counts_distinct_indices_of_newest_group() {
+        let mut store = PayloadStoreMap::new();
+        // stale group (older timestamps)
+        store.insert("t/__chunk/200000000/3/0".into(), entry(1));
+        // newest group, 2 of 5 received
+        store.insert("t/__chunk/300000000/5/0".into(), entry(10));
+        store.insert("t/__chunk/300000000/5/4".into(), entry(11));
+        let p = chunk_progress(&store, "t").unwrap();
+        assert_eq!(
+            (p.received, p.total_chunks, p.total_size),
+            (2, 5, 300000000)
+        );
+    }
+
+    #[test]
+    fn chunk_progress_none_for_plain_or_other_topics() {
+        let mut store = PayloadStoreMap::new();
+        store.insert("t".into(), entry(1));
+        store.insert("other/__chunk/100/1/0".into(), entry(1));
+        assert!(chunk_progress(&store, "t").is_none());
     }
 }
