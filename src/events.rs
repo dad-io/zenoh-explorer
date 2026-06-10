@@ -211,9 +211,12 @@ impl ZenohExplorer {
 
         let is_query_reply = message.message_type == MessageType::QueryReply;
 
+        // Chunk messages are excluded from the messages list; their bytes still
+        // go to payload_store via add_message_with_limits (display=false path).
         // Pause skips only DISPLAY (the messages list); storage and tree
         // updates continue so no data is lost while paused.
-        let display = !self.paused_keys.contains(&message.key);
+        let is_chunk = crate::transfer::parse_chunk_key(&message.key).is_some();
+        let display = !is_chunk && !self.paused_keys.contains(&message.key);
 
         self.add_message_to_browse_tree(&message);
         self.add_message_with_limits(message, display);
@@ -225,7 +228,20 @@ impl ZenohExplorer {
 
     /// Adds a received message to the hierarchical browse tree.
     /// Creates parent nodes as needed to maintain the tree structure.
-    pub(crate) fn add_message_to_browse_tree(&self, message: &ZenohMessage) {
+    pub(crate) fn add_message_to_browse_tree(&mut self, message: &ZenohMessage) {
+        // Chunk traffic: update the parent topic's transfer state instead of
+        // materializing a 4-level __chunk subtree per chunk.
+        if let Some((topic, meta)) = crate::transfer::parse_chunk_key(&message.key) {
+            if meta.is_sane() {
+                let topic_owned = topic.to_string();
+                if let Ok(mut tree) = self.browse_tree.write() {
+                    tree.record_chunk(&topic_owned, meta);
+                }
+                self.tree_version = self.tree_version.wrapping_add(1);
+            }
+            return;
+        }
+
         if let Ok(mut tree) = self.browse_tree.write() {
             let current_node = tree.insert_path(&message.key);
 
@@ -257,6 +273,7 @@ impl ZenohExplorer {
             let mark_as_local = message.is_local && message.message_type == MessageType::Publish;
             current_node.update_data(payload_for_tree, message.encoding.clone(), mark_as_local);
         }
+        self.tree_version = self.tree_version.wrapping_add(1);
     }
 
     /// Add a message while respecting memory and count limits

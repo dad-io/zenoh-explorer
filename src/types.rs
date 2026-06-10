@@ -44,6 +44,24 @@ pub fn safe_truncate_index(s: &str, max_len: usize) -> usize {
 
 // ── Data structures ──────────────────────────────────────────────────────────
 
+/// In-flight or completed chunked file transfer, tracked on the parent topic node.
+#[derive(Debug, Clone)]
+pub struct TransferState {
+    pub total_size: usize,
+    pub total_chunks: usize,
+    pub received: std::collections::HashSet<usize>,
+    pub last_update: Instant,
+}
+
+impl TransferState {
+    /// Returns true when all chunks have been received.
+    /// Read by Task 12's UI rendering; written suppression needed until then.
+    #[allow(dead_code)]
+    pub fn is_complete(&self) -> bool {
+        self.received.len() == self.total_chunks
+    }
+}
+
 /// Represents a node in the hierarchical browse tree.
 /// Each node can have children (forming a tree structure) and maintains
 /// metadata about the last received message for that key path.
@@ -58,6 +76,8 @@ pub struct ZenohNode {
     pub is_local: bool, // True if this key was published from this app instance
     /// Number of leaf nodes in the subtree rooted at this node (self counts as 1 when childless).
     pub cumulative_leaves: usize,
+    /// In-flight or completed chunked transfer state for this topic node.
+    pub transfer: Option<TransferState>,
 }
 
 impl ZenohNode {
@@ -72,6 +92,7 @@ impl ZenohNode {
             last_encoding: None,
             is_local: false,
             cumulative_leaves: 1, // Every node starts as its own leaf
+            transfer: None,
         }
     }
 
@@ -121,6 +142,28 @@ impl ZenohNode {
         if is_local {
             self.is_local = true;
         }
+    }
+
+    /// Record a received chunk on the parent topic's node (no __chunk subtree
+    /// is materialized). A chunk from a different (size, chunks) generation
+    /// resets the transfer state.
+    pub fn record_chunk(&mut self, topic: &str, meta: crate::transfer::ChunkMeta) {
+        let node = self.insert_path(topic);
+        let stale = node.transfer.as_ref().is_some_and(|t| {
+            (t.total_size, t.total_chunks) != (meta.total_size, meta.total_chunks)
+        });
+        if stale || node.transfer.is_none() {
+            node.transfer = Some(TransferState {
+                total_size: meta.total_size,
+                total_chunks: meta.total_chunks,
+                received: Default::default(),
+                last_update: Instant::now(),
+            });
+        }
+        let t = node.transfer.as_mut().expect("just ensured");
+        t.received.insert(meta.index);
+        t.last_update = Instant::now();
+        node.last_seen = Instant::now();
     }
 }
 
@@ -551,5 +594,28 @@ mod tests {
         let leaf2 = root.insert_path("x//y/z");
         assert_eq!(leaf2.key, "z");
         assert_eq!(root.cumulative_leaves, 1);
+    }
+
+    #[test]
+    fn transfer_state_resets_on_new_generation() {
+        let mut root = ZenohNode::new("root".into());
+        let meta_a = crate::transfer::ChunkMeta {
+            total_size: 100,
+            total_chunks: 2,
+            index: 0,
+        };
+        let meta_b = crate::transfer::ChunkMeta {
+            total_size: 200,
+            total_chunks: 3,
+            index: 1,
+        };
+        root.record_chunk("t", meta_a);
+        root.record_chunk("t", crate::transfer::ChunkMeta { index: 1, ..meta_a });
+        assert!(root.children["t"].transfer.as_ref().unwrap().is_complete());
+        root.record_chunk("t", meta_b); // new generation resets
+        let t = root.children["t"].transfer.as_ref().unwrap();
+        assert_eq!((t.total_chunks, t.received.len()), (3, 1));
+        // no __chunk children materialized
+        assert!(root.children["t"].children.is_empty());
     }
 }

@@ -69,6 +69,10 @@ pub struct ZenohExplorer {
     pub(crate) json_parse_cache: std::collections::HashMap<u64, Option<String>>,
     pub(crate) expanded_payloads: std::collections::HashSet<String>,
     pub(crate) payload_store: Arc<RwLock<PayloadStoreMap>>,
+    /// Monotonic counter incremented whenever the browse tree changes; used by
+    /// Task 12's filter cache to detect staleness. Written here; reads come next task.
+    #[allow(dead_code)]
+    pub(crate) tree_version: u64,
 }
 
 impl Default for ZenohExplorer {
@@ -160,6 +164,7 @@ impl ZenohExplorer {
             json_parse_cache: std::collections::HashMap::new(),
             expanded_payloads: std::collections::HashSet::new(),
             payload_store: Arc::new(RwLock::new(HashMap::new())),
+            tree_version: 0,
         }
     }
 
