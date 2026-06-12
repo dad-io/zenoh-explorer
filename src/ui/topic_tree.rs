@@ -11,11 +11,12 @@ use crate::ui::messages::MessagesUI;
 use crate::ui::publish::PublishUI;
 use crate::ui::query::QueryUI;
 
-/// Draw a leader line (dashed when collapsed, solid when expanded) filling the
-/// space between the label and a right-aligned tabular count.
+/// Right-align a tabular count, with a leader line filling the gap for
+/// expandable rows only (`Some(expanded)`: dashed when collapsed, solid when
+/// expanded). Non-expandable rows (`None`) keep the spacing but draw no line.
 fn leader_line_with_count(
     ui: &mut egui::Ui,
-    expanded: bool,
+    line: Option<bool>,
     count: usize,
     text_color: egui::Color32,
 ) {
@@ -32,26 +33,28 @@ fn leader_line_with_count(
         egui::vec2(line_w, ui.spacing().interact_size.y),
         egui::Sense::hover(),
     );
-    let y = rect.center().y;
-    let (alpha, dashed) = if expanded { (100, false) } else { (64, true) };
-    let stroke = egui::Stroke::new(
-        1.0,
-        egui::Color32::from_rgba_unmultiplied(
-            text_color.r(),
-            text_color.g(),
-            text_color.b(),
-            alpha,
-        ),
-    );
-    let a = egui::pos2(rect.left() + 4.0, y);
-    let b = egui::pos2(rect.right() - 4.0, y);
-    if rect.width() > 12.0 {
-        if dashed {
-            for shape in egui::Shape::dashed_line(&[a, b], stroke, 3.0, 3.0) {
-                ui.painter().add(shape);
+    if let Some(expanded) = line {
+        let y = rect.center().y;
+        let (alpha, dashed) = if expanded { (100, false) } else { (64, true) };
+        let stroke = egui::Stroke::new(
+            1.0,
+            egui::Color32::from_rgba_unmultiplied(
+                text_color.r(),
+                text_color.g(),
+                text_color.b(),
+                alpha,
+            ),
+        );
+        let a = egui::pos2(rect.left() + 4.0, y);
+        let b = egui::pos2(rect.right() - 4.0, y);
+        if rect.width() > 12.0 {
+            if dashed {
+                for shape in egui::Shape::dashed_line(&[a, b], stroke, 3.0, 3.0) {
+                    ui.painter().add(shape);
+                }
+            } else {
+                ui.painter().line_segment([a, b], stroke);
             }
-        } else {
-            ui.painter().line_segment([a, b], stroke);
         }
     }
     ui.label(
@@ -685,7 +688,7 @@ impl TopicTreeUI for ZenohExplorer {
                 }
 
                 // Show message count with leader line (always dashed/collapsed-style for leaves)
-                leader_line_with_count(ui, false, node.message_count, self.text_tertiary_color());
+                leader_line_with_count(ui, None, node.message_count, self.text_tertiary_color());
             });
         } else {
             // Branch node - collapsible with consistent spacing
@@ -754,7 +757,7 @@ impl TopicTreeUI for ZenohExplorer {
                     }
 
                     // Show descendant leaf count with leader line
-                    leader_line_with_count(ui, expanded, cumulative_leaves, tertiary);
+                    leader_line_with_count(ui, Some(expanded), cumulative_leaves, tertiary);
                 });
             });
 
