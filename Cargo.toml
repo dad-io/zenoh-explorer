@@ -1,6 +1,6 @@
 [package]
 name = "zenoh-explorer"
-version = "0.1.0"
+version = "0.9.0"
 edition = "2021"
 description = "A native GUI application for exploring Zenoh networks"
 license = "Apache-2.0"
