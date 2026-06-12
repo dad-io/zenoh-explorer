@@ -64,6 +64,37 @@ fn leader_line_with_count(
     );
 }
 
+/// Custom expander: two intersecting pipes. Collapsed shows ＋ (vertical pipe
+/// crossing the horizontal); on expansion the vertical pipe rotates 90° to lie
+/// over the horizontal one and "hides", leaving −. `openness` is egui's
+/// animated 0..=1 open fraction, so the rotation animates on click.
+fn plus_minus_icon(ui: &mut egui::Ui, openness: f32, response: &egui::Response) {
+    let rect = response.rect;
+    let center = rect.center();
+    let half = rect.width().min(rect.height()) * 0.4;
+    let mut stroke = ui.style().interact(response).fg_stroke;
+    stroke.width = 1.5;
+    let painter = ui.painter();
+    painter.line_segment(
+        [
+            egui::pos2(center.x - half, center.y),
+            egui::pos2(center.x + half, center.y),
+        ],
+        stroke,
+    );
+    // Vertical pipe rotates onto the horizontal as openness goes 0 → 1.
+    let angle = openness * std::f32::consts::FRAC_PI_2;
+    let (sin, cos) = angle.sin_cos();
+    let (dx, dy) = (half * sin, half * cos);
+    painter.line_segment(
+        [
+            egui::pos2(center.x - dx, center.y - dy),
+            egui::pos2(center.x + dx, center.y + dy),
+        ],
+        stroke,
+    );
+}
+
 /// Inline transfer progress: bar + chunk count, ✓+size when complete,
 /// byte progress while in flight. Free fn so it can render inside closures
 /// that cannot borrow `self`.
@@ -701,7 +732,7 @@ impl TopicTreeUI for ZenohExplorer {
             } else {
                 egui::Id::new(("treenode", &full_path))
             };
-            let state = egui::collapsing_header::CollapsingState::load_with_default_open(
+            let mut state = egui::collapsing_header::CollapsingState::load_with_default_open(
                 ui.ctx(),
                 id,
                 filtering,
@@ -710,16 +741,20 @@ impl TopicTreeUI for ZenohExplorer {
             let tertiary = self.text_tertiary_color();
             let cumulative_leaves = node.cumulative_leaves;
 
-            // Clone the transfer state before the header closure to avoid borrow conflicts:
-            // show_header takes a FnOnce(&mut Ui) which prevents calling &self methods inside.
+            // Clone the transfer state before the header row closure to avoid
+            // borrow conflicts with &self method calls inside it.
             let transfer_snapshot: Option<TransferState> = node.transfer.clone();
             let dark_mode = self.dark_mode;
             let secondary_color = self.text_secondary_color();
 
-            let header_response = state.show_header(ui, |ui| {
-                ui.horizontal(|ui| {
-                    ui.add_space(indent);
+            ui.horizontal(|ui| {
+                ui.add_space(indent);
 
+                // Plus/minus expander: a larger, clearer toggle than the
+                // default chevron (vertical pipe rotates away on expand).
+                state.show_toggle_button(ui, plus_minus_icon);
+
+                {
                     // Local indicator - subtle filled circle with fade-in animation
                     if node.is_local {
                         let fade = self.animate_fade_in(
@@ -758,10 +793,10 @@ impl TopicTreeUI for ZenohExplorer {
 
                     // Show descendant leaf count with leader line
                     leader_line_with_count(ui, Some(expanded), cumulative_leaves, tertiary);
-                });
+                }
             });
 
-            header_response.body(|ui| {
+            state.show_body_unindented(ui, |ui| {
                 for child in node.children.values() {
                     self.show_tree_node(ui, child, full_path.clone(), depth + 1);
                 }
