@@ -1,0 +1,12 @@
+{"src":"../../app/dark-1400-04-alert-banner.png","out":"../t12-D-save-banner.png","ops":[
+{"op":"shade","r":[16,202,2784,212],"c":"#34c75988"},
+{"op":"box","r":[16,212,2784,252],"c":"#3ec6ff","w":5},
+{"op":"box","r":[16,256,2784,296],"c":"#ff3b30","w":4,"dash":[12,8]},
+{"op":"box","r":[832,364,1079,399],"c":"#ff8a3d","w":6},
+{"op":"box","r":[281,1005,323,1039],"c":"#ff8a3d","w":6},
+{"op":"path","p":[[955,364],[955,254]],"c":"#ff3b30","w":6,"dash":[14,8],"arrow":true},
+{"op":"x","at":[955,276],"c":"#ff3b30","w":7},
+{"op":"path","p":[[302,1005],[302,254]],"c":"#ff3b30","w":6,"dash":[14,8],"arrow":true},
+{"op":"x","at":[302,276],"c":"#ff3b30","w":7},
+{"op":"label","at":[1120,330],"t":"7 SAVE  Save File / tree-row save -> full-width banner (topic_tree.rs:821, app.rs:633-655)\nno gap: the toolbar panel sits between every Save source and the banner;\nbanner and toolbar abut (hairline y=253-255 px). The only exposed strip (green)\nis ABOVE the banner, on the far side from every source.","c":"#ff3b30"}
+]}

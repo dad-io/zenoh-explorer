@@ -1,0 +1,1 @@
+[{"op":"goto","url":"http://127.0.0.1:8761/","wait":1500},{"op":"eval","label":"mix","js":"JSON.stringify(['#ba7754','#8eaa6f','#d8ba6b','#c4874a','#a7563e'].map(c=>{const d=document.createElement('div');d.style.color=`color-mix(in srgb,${c} 50%,#d6d1c2)`;document.body.append(d);const v=getComputedStyle(d).color;d.remove();return [c,v]}))"}]

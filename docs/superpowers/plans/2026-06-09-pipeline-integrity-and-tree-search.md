@@ -1781,7 +1781,7 @@ pub fn export_payload_to_file(
 
 ### Task 22: Port to send_it
 
-The sibling repo `/Users/samelsner/Documents/github/send_it` (GitHub `dad-io/sendit`) shares the same source layout (`app.rs`, `events.rs`, `transfer.rs`, `types.rs`, `zenoh_worker.rs`, `ui/`) and the same `ci.yml`/`release.yml`. Port AFTER the zenoh-explorer PR is approved/merged.
+The sibling repo `~/Documents/github/send_it` (GitHub `dad-io/sendit`) shares the same source layout (`app.rs`, `events.rs`, `transfer.rs`, `types.rs`, `zenoh_worker.rs`, `ui/`) and the same `ci.yml`/`release.yml`. Port AFTER the zenoh-explorer PR is approved/merged.
 
 - [ ] **Step 1:** In send_it: `git checkout -b feat/pipeline-integrity-tree-search`.
 - [ ] **Step 2:** Diff each changed file against its zenoh-explorer counterpart (`diff src/transfer.rs ../zenoh-explorer/src/transfer.rs`) to gauge divergence. Where files are identical or near-identical, apply the zenoh-explorer commits with `git diff main..feat/pipeline-integrity-tree-search -- <file> | git apply -3` per file; where send_it has diverged (renames, removed debugger UI), re-apply each task's change by hand following this plan's code blocks — the task structure above IS the port checklist.

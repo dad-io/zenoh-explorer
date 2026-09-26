@@ -1,0 +1,32 @@
+# Scratch crate outside the repo (zenoh-keyexpr = "=1.7.2", cargo run --offline). Run 2026-09-25 (re-run with whitespace-only inputs added).
+# Selector.try_from splits at the first '?' and validates the key part with <&keyexpr>::try_from (zenoh-1.7.2 src/api/selector.rs:233-246).
+
+--- src/main.rs ---
+use zenoh_keyexpr::keyexpr;
+fn main() {
+    for s in ["demo/**", "/demo/**", "demo/", "demo*", "demo/**/**", "demo/*/temp1", " demo/**", "demo/sensors/temp1 ", "demo//x", "demo/**?x=1", "demo/$*", "demo/a$*", "", " ", "   "] {
+        // Selector::try_from splits at the first '?' and validates only the key part
+        let key = match s.find('?') { Some(i) => &s[..i], None => s };
+        match <&keyexpr>::try_from(key) {
+            Ok(k) => println!("{:?}\tOK   key={:?}", s, k.as_str()),
+            Err(e) => println!("{:?}\tERR  {}", s, e),
+        }
+    }
+}
+
+--- output ---
+"demo/**"	OK   key="demo/**"
+"/demo/**"	ERR  Invalid Key Expr `/demo/**`: empty chunks are forbidden, as well as leading and trailing slashes at ~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zenoh-keyexpr-1.7.2/src/key_expr/borrowed.rs:754.
+"demo/"	ERR  Invalid Key Expr `demo/`: empty chunks are forbidden, as well as leading and trailing slashes at ~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zenoh-keyexpr-1.7.2/src/key_expr/borrowed.rs:754.
+"demo*"	ERR  Invalid Key Expr `demo*`: `*` may only be preceded by `/` or `$` at ~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zenoh-keyexpr-1.7.2/src/key_expr/borrowed.rs:754.
+"demo/**/**"	ERR  Invalid Key Expr `demo/**/**`: `**/**` must be replaced by `**` to reach canon-form at ~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zenoh-keyexpr-1.7.2/src/key_expr/borrowed.rs:754.
+"demo/*/temp1"	OK   key="demo/*/temp1"
+" demo/**"	OK   key=" demo/**"
+"demo/sensors/temp1 "	OK   key="demo/sensors/temp1 "
+"demo//x"	ERR  Invalid Key Expr `demo//x`: empty chunks are forbidden, as well as leading and trailing slashes at ~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zenoh-keyexpr-1.7.2/src/key_expr/borrowed.rs:754.
+"demo/**?x=1"	OK   key="demo/**"
+"demo/$*"	ERR  Invalid Key Expr `demo/$*`: empty chunks are forbidden, as well as leading and trailing slashes at ~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zenoh-keyexpr-1.7.2/src/key_expr/borrowed.rs:754.
+"demo/a$*"	OK   key="demo/a$*"
+""	ERR  Invalid Key Expr ``: empty chunks are forbidden, as well as leading and trailing slashes at ~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zenoh-keyexpr-1.7.2/src/key_expr/borrowed.rs:754.
+" "	OK   key=" "
+"   "	OK   key="   "

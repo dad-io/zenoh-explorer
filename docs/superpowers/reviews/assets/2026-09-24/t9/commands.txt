@@ -1,0 +1,38 @@
+# Commands used for T9, run 2026-09-25 from a scratch dir holding rec.mjs / shots.mjs ($S below).
+export A=<repo>/docs/superpowers/reviews/assets/2026-09-24/t9   # absolute path; the python in step 4 reads it from the environment
+# 1. Serve the specimen and start headless Chrome
+(cd ~/Documents/github/rabbits-social/snow-white-workbench/assets/reference-ux && python3 -m http.server 8761 --bind 127.0.0.1 &)
+"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless=new --remote-debugging-port=9333 --user-data-dir=$S/chrome --window-size=1440,900 --hide-scrollbars about:blank &
+# 2. Scenario recordings: Page.startScreencast, device scale factor 1 (DSF=2 was tried; the screencast output stays at 1x device pixels)
+for m in nav repeat reduced build local; do DSF=1 node rec.mjs frames/$m $m; done
+# 3. Frame strip: 2x clipped Page.captureScreenshot polling with Animation.setPlaybackRate(0.1); timestamps = (wall - t0) * RATE
+RATE=0.1 node shots.mjs shots/nav 0
+# 4. Strip assembly: every 4th shot, resized to 560 px, into frames/; strip.html written by the python below; strip.png rendered from strip.html
+for f in $(ls shots/nav/*.png | awk 'NR%4==1'); do sips -Z 560 $f --out $A/frames/$(basename $f); done
+python3 - <<'EOF'   # (run with A set; header text later edited to the converted-time wording now in strip.html:2)
+import os,re
+A=os.environ['A']; fs=sorted(f for f in os.listdir(A+'/frames') if f.endswith('.png'))
+cells=''.join(f'<figure><img src="frames/{f}"><figcaption>t = {re.search(r"_(-?\d+)ms",f).group(1)} ms</figcaption></figure>' for f in fs)
+open(A+'/strip.html','w').write('<!doctype html>…<h1>T9 frame strip — …</h1><div class=g>'+cells+'</div>')   # abbreviated here; the committed strip.html holds the full style and header
+EOF
+"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless=new --disable-gpu --hide-scrollbars --window-size=1160,1390 --screenshot=$A/strip.png file://$A/strip.html
+# 5. Scenario key frames: copied from frames/<mode>/fNNN_<t>ms.png to scenarios/<name>-<t>ms.png, resized to 1000 px
+cp frames/reduced/f001_46ms.png   $A/scenarios/reduced-46ms.png          # pre-commit frame (Burrow still active)
+cp frames/reduced/f002_62ms.png   $A/scenarios/reduced-62ms.png          # pre-commit, Arena pressed
+cp frames/reduced/f003_98ms.png   $A/scenarios/reduced-commit-98ms.png   # first committed frame
+cp frames/reduced/f004_1229ms.png $A/scenarios/reduced-final-1229ms.png
+cp frames/repeat/f021_733ms.png   $A/scenarios/repeat-733ms.png
+cp frames/repeat/f052_2184ms.png  $A/scenarios/repeat-final-2184ms.png
+cp frames/build/f053_243ms.png    $A/scenarios/build-pending-243ms.png
+cp frames/build/f054_1115ms.png   $A/scenarios/build-1115ms.png
+cp frames/build/f055_1337ms.png   $A/scenarios/build-1337ms.png
+cp frames/build/f056_1458ms.png   $A/scenarios/build-commit-1458ms.png
+L=$(ls frames/local | grep png | sed -n 12p); cp frames/local/$L $A/scenarios/local-$L   # -> local-f011_417ms.png
+for f in $A/scenarios/*.png; do sips -Z 1000 $f; done
+# 6. Per-scenario marks and frame-time lists
+for m in nav repeat reduced build local; do cp frames/$m/marks.json $A/scenarios/$m-marks.json; ls frames/$m | grep png | sed 's/^f[0-9]*_//' | tr '\n' ' ' > $A/scenarios/$m-frame-times.txt; done
+# 7. Colour mix (color-mix-computed.txt), using the T2 CDP driver, run from $A
+(cd $A && node ../reference/cdp.mjs mix.json > color-mix-computed.txt)   # stdout only; the '#' header and 'x255:' lines were added by hand afterwards
+
+# Note: step 5 is a consolidated record; key frames were copied in three passes (10:17, 10:37, 10:45) during review revisions.
+# md5 of raw frames: frames/build/f053_243ms.png = 8631608a818dc93bc8177feb7e890e25, frames/build/f054_1115ms.png = 8631608a818dc93bc8177feb7e890e25

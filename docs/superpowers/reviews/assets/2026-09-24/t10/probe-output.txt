@@ -1,0 +1,43 @@
+== (f) seat(c) = 50% sRGB mix with #d6d1c2 ==
+input     lerp_to_gamma(0.5)   linear-Rgba lerp(0.5)   T9 Chrome hex
+#ba7754   #c8a48b              #c9ac98                 #c8a48b  match=true
+#8eaa6f   #b2be99              #b7bfa0                 #b2be99  match=true
+#d8ba6b   #d7c697              #d7c69e                 #d7c697  match=true
+#c4874a   #cdac86              #cdb196                 #cdac86  match=true
+#a7563e   #bf9480              #c0a393                 #bf9480  match=true
+
+== keyframe interpolation midpoints between consecutive stops (side k=0 path) ==
+#c8a48b -> #b2be99  srgb mid #bdb192  oklab mid #beb192  max channel diff 0.9
+#b2be99 -> #d7c697  srgb mid #c5c298  oklab mid #c5c298  max channel diff 0.3
+#d7c697 -> #cdac86  srgb mid #d2b98f  oklab mid #d2b98e  max channel diff 0.5
+#cdac86 -> #bf9480  srgb mid #c6a083  oklab mid #c6a083  max channel diff 0.1
+#bf9480 -> #b2be99  srgb mid #b9a98d  oklab mid #baa98c  max channel diff 0.8
+#b2be99 -> #c8a48b  srgb mid #bdb192  oklab mid #beb192  max channel diff 0.9
+max channel difference sRGB vs Oklab midpoint: 0.9/255
+
+== (a) CSS inset layer profile: e = offset*depth + spread, sigma = blur/2 ==
+layer               depth  e(pt)  shade@0  shade@2  shade@4  depth where shade<1/255
+1 top sidewall       0.00  -2.00   0.103    0.015    0.001    3.25
+1 top sidewall       0.72   0.88   0.436    0.187    0.039    6.00
+1 top sidewall       1.00   2.00   0.547    0.325    0.103    7.25
+1 top sidewall       1.15   2.60   0.587    0.402    0.157    7.75
+2 left sidewall      0.00  -2.00   0.103    0.015    0.001    3.25
+2 left sidewall      0.72   0.88   0.436    0.187    0.039    6.00
+2 left sidewall      1.00   2.00   0.547    0.325    0.103    7.25
+2 left sidewall      1.15   2.60   0.587    0.402    0.157    7.75
+3 bottom sidewall    0.00  -2.00   0.050    0.002    0.000    1.75
+3 bottom sidewall    0.72   0.16   0.298    0.060    0.003    4.00
+3 bottom sidewall    1.00   1.00   0.411    0.139    0.013    4.75
+3 bottom sidewall    1.15   1.45   0.458    0.196    0.025    5.25
+4 right sidewall     0.00  -2.00   0.050    0.002    0.000    1.75
+4 right sidewall     0.72   0.16   0.298    0.060    0.003    4.00
+4 right sidewall     1.00   1.00   0.411    0.139    0.013    4.75
+4 right sidewall     1.15   1.45   0.458    0.196    0.025    5.25
+5 contact (top)      0.00  -4.00   0.022    0.003    0.000    2.00
+5 contact (top)      0.72  -0.40   0.175    0.067    0.016    5.50
+5 contact (top)      1.00   1.00   0.262    0.138    0.046    7.00
+5 contact (top)      1.15   1.75   0.303    0.184    0.074    7.75
+
+== frame-cost probe: ring mesh build + epaint 0.29.1 tessellation ==
+wrote bevel-probe.ppm (690x300, 3x): pending 0.72 | rest 1.0 | peak 1.15 spectrum
+8 surfaces, 544 vertices / 1024 triangles each; build+tessellate = 262.0 us per frame (release, 1 thread); 1 primitive(s)

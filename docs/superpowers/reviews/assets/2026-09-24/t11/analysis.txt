@@ -1,0 +1,260 @@
+== t11/rel-reveal-committed.log
+   # event t=1003.0ms click action=1 wall=1002.9
+   # event t=1603.9ms commit action=1 (worker sent at wall 1603.6 ms)
+  frames logged: 179 total, 160 animating; interval between consecutive animating frames ms (n=158): mean 8.26 median 4.20 p95 14.09 max 14.41
+  wake-up intervals into an animating frame after an idle gap (ms): [12.1, 398.0]
+  cpu per frame (update+tessellate+paint, excl. vsync) while animating: median 0.361 p95 0.411 max 1.844 ms
+  effect build (rects->meshes, set) while animating: median 130 p95 140 max 209 us
+  cpu per frame when not animating: median 0.350 ms (n=16)
+  repaint policy decisions: {'none': 15, 'now': 160, 'after': 4}
+  last animating frame at since_commit = 1119.0 ms
+  source: rank(top,right,bottom,left)=[0, 2, 1, 3] order=['top', 'bottom', 'right', 'left']
+     first frame with depth>0 per side (ms after commit): top=2.9, bottom=32.4, right=65.8, left=84.8
+     frames at peak 1.15: top=(499.1, 799.1), bottom=(499.1, 799.1), right=(499.1, 799.1), left=(499.1, 799.1)
+     peak colours (t,r,b,l) = ['#b2be99', '#cdac86', '#d7c697', '#bf9480']
+     last logged (1711.5 ms): d=[1.0, 1.0, 1.0, 1.0] c=['#c8a48b', '#c8a48b', '#c8a48b', '#c8a48b'] flags=
+  relay: rank(top,right,bottom,left)=[0, 1, 3, 2] order=['top', 'right', 'left', 'bottom']
+     first frame with depth>0 per side (ms after commit): top=15.8, right=49.1, left=82.5, bottom=101.6
+     frames at peak 1.15: top=(515.8, 799.1), right=(515.8, 799.1), left=(515.8, 799.1), bottom=(515.8, 799.1)
+     peak colours (t,r,b,l) = ['#b2be99', '#d7c697', '#bf9480', '#cdac86']
+     last logged (1152.6 ms): d=[1.0, 1.0, 1.0, 1.0] c=['#c8a48b', '#c8a48b', '#c8a48b', '#c8a48b'] flags=
+  header: rank(top,right,bottom,left)=[2, 3, 1, 0] order=['left', 'bottom', 'top', 'right']
+     first frame with depth>0 per side (ms after commit): left=49.1, bottom=69.8, top=99.0, right=132.4
+     frames at peak 1.15: left=(532.4, 799.1), bottom=(532.4, 799.1), top=(532.4, 799.1), right=(532.4, 799.1)
+     peak colours (t,r,b,l) = ['#cdac86', '#bf9480', '#d7c697', '#b2be99']
+     last logged (1711.5 ms): d=[1.0, 1.0, 1.0, 1.0] c=['#c8a48b', '#c8a48b', '#c8a48b', '#c8a48b'] flags=
+  result: rank(top,right,bottom,left)=[1, 3, 2, 0] order=['left', 'top', 'bottom', 'right']
+     first frame with depth>0 per side (ms after commit): left=65.8, top=84.8, bottom=115.7, right=149.1
+     frames at peak 1.15: left=(265.8, 799.1), top=(265.8, 799.1), bottom=(265.8, 799.1), right=(265.8, 799.1)
+     peak colours (t,r,b,l) = ['#d7c697', '#bf9480', '#cdac86', '#b2be99']
+     last logged (1711.5 ms): d=[1.0, 1.0, 1.0, 1.0] c=['#c8a48b', '#c8a48b', '#c8a48b', '#c8a48b'] flags=
+  relay absent from since_commit = 1165.8 ms
+  link: first frame (0.0, (0.0, 0.0, False)), pattern=1 from 149.1 to 785.5, last (1711.5, (0.0, 1.0, False))
+  pending frames: 26, from 0.0 to 202.9 ms after click; max depth 0.720; colours {'#c8a48b'}
+== t11/rel-reveal.log
+   # event t=1010.7ms click action=1 wall=1010.6
+   # event t=1612.8ms commit action=1 (worker sent at wall 1612.5 ms)
+  frames logged: 157 total, 136 animating; interval between consecutive animating frames ms (n=134): mean 9.68 median 8.30 p95 16.79 max 17.16
+  wake-up intervals into an animating frame after an idle gap (ms): [12.7, 393.5]
+  cpu per frame (update+tessellate+paint, excl. vsync) while animating: median 0.279 p95 0.442 max 0.981 ms
+  effect build (rects->meshes, set) while animating: median 126 p95 137 max 280 us
+  cpu per frame when not animating: median 0.467 ms (n=18)
+  repaint policy decisions: {'none': 20, 'now': 136, 'after': 1}
+  last animating frame at since_commit = 1122.7 ms
+  source: rank(top,right,bottom,left)=[0, 2, 1, 3] order=['top', 'bottom', 'right', 'left']
+     first frame with depth>0 per side (ms after commit): top=0.9, bottom=39.6, right=64.5, left=89.4
+     frames at peak 1.15: top=(498.0, 797.9), bottom=(498.0, 797.9), right=(498.0, 797.9), left=(498.0, 797.9)
+     peak colours (t,r,b,l) = ['#b2be99', '#cdac86', '#d7c697', '#bf9480']
+     last logged (1695.0 ms): d=[1.0, 1.0, 1.0, 1.0] c=['#c8a48b', '#c8a48b', '#c8a48b', '#c8a48b'] flags=
+  relay: rank(top,right,bottom,left)=[0, 1, 3, 2] order=['top', 'right', 'left', 'bottom']
+     first frame with depth>0 per side (ms after commit): top=17.3, right=47.8, left=81.2, bottom=106.2
+     frames at peak 1.15: top=(508.4, 797.9), right=(508.4, 797.9), left=(508.4, 797.9), bottom=(508.4, 797.9)
+     peak colours (t,r,b,l) = ['#b2be99', '#d7c697', '#bf9480', '#cdac86']
+     last logged (1139.4 ms): d=[1.0, 1.0, 1.0, 1.0] c=['#c8a48b', '#c8a48b', '#c8a48b', '#c8a48b'] flags=
+  header: rank(top,right,bottom,left)=[2, 3, 1, 0] order=['left', 'bottom', 'top', 'right']
+     first frame with depth>0 per side (ms after commit): left=47.8, bottom=81.2, top=106.2, right=131.3
+     frames at peak 1.15: left=(547.9, 797.9), bottom=(547.9, 797.9), top=(547.9, 797.9), right=(547.9, 797.9)
+     peak colours (t,r,b,l) = ['#cdac86', '#bf9480', '#d7c697', '#b2be99']
+     last logged (1695.0 ms): d=[1.0, 1.0, 1.0, 1.0] c=['#c8a48b', '#c8a48b', '#c8a48b', '#c8a48b'] flags=
+  result: rank(top,right,bottom,left)=[1, 3, 2, 0] order=['left', 'top', 'bottom', 'right']
+     first frame with depth>0 per side (ms after commit): left=64.5, top=89.4, bottom=122.9, right=147.9
+     frames at peak 1.15: left=(264.6, 797.9), top=(264.6, 797.9), bottom=(264.6, 797.9), right=(264.6, 797.9)
+     peak colours (t,r,b,l) = ['#d7c697', '#bf9480', '#cdac86', '#b2be99']
+     last logged (1695.0 ms): d=[1.0, 1.0, 1.0, 1.0] c=['#c8a48b', '#c8a48b', '#c8a48b', '#c8a48b'] flags=
+  relay absent from since_commit = 1156.1 ms
+  link: first frame (0.0, (0.0, 0.0, False)), pattern=1 from 147.9 to 784.6, last (1695.0, (0.0, 1.0, False))
+  pending frames: 18, from 0.0 to 208.6 ms after click; max depth 0.720; colours {'#c8a48b'}
+== t11/rel-reveal-rows2000.log
+   # event t=1004.4ms click action=1 wall=1004.3
+   # event t=1610.0ms commit action=1 (worker sent at wall 1609.5 ms)
+  frames logged: 182 total, 161 animating; interval between consecutive animating frames ms (n=159): mean 8.23 median 8.29 p95 14.64 max 15.42
+  wake-up intervals into an animating frame after an idle gap (ms): [7.5, 396.7]
+  cpu per frame (update+tessellate+paint, excl. vsync) while animating: median 1.425 p95 1.984 max 5.790 ms
+  effect build (rects->meshes, set) while animating: median 247 p95 322 max 572 us
+  cpu per frame when not animating: median 0.886 ms (n=18)
+  repaint policy decisions: {'none': 18, 'now': 161, 'after': 3}
+  last animating frame at since_commit = 1122.5 ms
+  source: rank(top,right,bottom,left)=[0, 2, 1, 3] order=['top', 'bottom', 'right', 'left']
+     first frame with depth>0 per side (ms after commit): top=6.7, bottom=28.4, right=61.7, left=86.7
+     frames at peak 1.15: top=(495.0, 797.8), bottom=(495.0, 797.8), right=(495.0, 797.8), left=(495.0, 797.8)
+     peak colours (t,r,b,l) = ['#b2be99', '#cdac86', '#d7c697', '#bf9480']
+     last logged (1700.4 ms): d=[1.0, 1.0, 1.0, 1.0] c=['#c8a48b', '#c8a48b', '#c8a48b', '#c8a48b'] flags=
+  relay: rank(top,right,bottom,left)=[0, 1, 3, 2] order=['top', 'right', 'left', 'bottom']
+     first frame with depth>0 per side (ms after commit): top=16.8, right=45.0, left=72.6, bottom=111.7
+     frames at peak 1.15: top=(511.7, 797.8), right=(511.7, 797.8), left=(511.7, 797.8), bottom=(511.7, 797.8)
+     peak colours (t,r,b,l) = ['#b2be99', '#d7c697', '#bf9480', '#cdac86']
+     last logged (1147.3 ms): d=[1.0, 1.0, 1.0, 1.0] c=['#c8a48b', '#c8a48b', '#c8a48b', '#c8a48b'] flags=
+  header: rank(top,right,bottom,left)=[2, 3, 1, 0] order=['left', 'bottom', 'top', 'right']
+     first frame with depth>0 per side (ms after commit): left=45.0, bottom=69.9, top=97.1, right=136.7
+     frames at peak 1.15: left=(536.7, 797.8), bottom=(536.7, 797.8), top=(536.7, 797.8), right=(536.7, 797.8)
+     peak colours (t,r,b,l) = ['#cdac86', '#bf9480', '#d7c697', '#b2be99']
+     last logged (1700.4 ms): d=[1.0, 1.0, 1.0, 1.0] c=['#c8a48b', '#c8a48b', '#c8a48b', '#c8a48b'] flags=
+  result: rank(top,right,bottom,left)=[1, 3, 2, 0] order=['left', 'top', 'bottom', 'right']
+     first frame with depth>0 per side (ms after commit): left=61.7, top=86.7, bottom=111.7, right=145.0
+     frames at peak 1.15: left=(261.7, 797.8), top=(261.7, 797.8), bottom=(261.7, 797.8), right=(261.7, 797.8)
+     peak colours (t,r,b,l) = ['#d7c697', '#bf9480', '#cdac86', '#b2be99']
+     last logged (1700.4 ms): d=[1.0, 1.0, 1.0, 1.0] c=['#c8a48b', '#c8a48b', '#c8a48b', '#c8a48b'] flags=
+  relay absent from since_commit = 1161.6 ms
+  link: first frame (0.0, (0.0, 0.0, False)), pattern=1 from 145.0 to 795.0, last (1700.4, (0.0, 1.0, False))
+  pending frames: 26, from 0.0 to 209.0 ms after click; max depth 0.720; colours {'#c8a48b'}
+== t11/dev-reveal.log
+   # event t=1003.1ms click action=1 wall=1003.0
+   # event t=1606.5ms commit action=1 (worker sent at wall 1605.7 ms)
+  frames logged: 180 total, 159 animating; interval between consecutive animating frames ms (n=157): mean 8.32 median 8.29 p95 14.29 max 15.46
+  wake-up intervals into an animating frame after an idle gap (ms): [4.8, 400.2]
+  cpu per frame (update+tessellate+paint, excl. vsync) while animating: median 2.656 p95 3.524 max 5.134 ms
+  effect build (rects->meshes, set) while animating: median 1689 p95 2207 max 3119 us
+  cpu per frame when not animating: median 1.486 ms (n=18)
+  repaint policy decisions: {'none': 18, 'now': 159, 'after': 3}
+  last animating frame at since_commit = 1120.1 ms
+  source: rank(top,right,bottom,left)=[0, 2, 1, 3] order=['top', 'bottom', 'right', 'left']
+     first frame with depth>0 per side (ms after commit): top=5.5, bottom=42.0, right=66.8, left=91.6
+     frames at peak 1.15: top=(495.0, 794.6), bottom=(495.0, 794.6), right=(495.0, 794.6), left=(495.0, 794.6)
+     peak colours (t,r,b,l) = ['#b2be99', '#cdac86', '#d7c697', '#bf9480']
+     last logged (1695.7 ms): d=[1.0, 1.0, 1.0, 1.0] c=['#c8a48b', '#c8a48b', '#c8a48b', '#c8a48b'] flags=
+  relay: rank(top,right,bottom,left)=[0, 1, 3, 2] order=['top', 'right', 'left', 'bottom']
+     first frame with depth>0 per side (ms after commit): top=24.8, right=50.1, left=75.1, bottom=99.8
+     frames at peak 1.15: top=(508.2, 794.6), right=(508.2, 794.6), left=(508.2, 794.6), bottom=(508.2, 794.6)
+     peak colours (t,r,b,l) = ['#b2be99', '#d7c697', '#bf9480', '#cdac86']
+     last logged (1144.5 ms): d=[1.0, 1.0, 1.0, 1.0] c=['#c8a48b', '#c8a48b', '#c8a48b', '#c8a48b'] flags=
+  header: rank(top,right,bottom,left)=[2, 3, 1, 0] order=['left', 'bottom', 'top', 'right']
+     first frame with depth>0 per side (ms after commit): left=42.0, bottom=75.1, top=99.8, right=133.3
+     frames at peak 1.15: left=(533.1, 794.6), bottom=(533.1, 794.6), top=(533.1, 794.6), right=(533.1, 794.6)
+     peak colours (t,r,b,l) = ['#cdac86', '#bf9480', '#d7c697', '#b2be99']
+     last logged (1695.7 ms): d=[1.0, 1.0, 1.0, 1.0] c=['#c8a48b', '#c8a48b', '#c8a48b', '#c8a48b'] flags=
+  result: rank(top,right,bottom,left)=[1, 3, 2, 0] order=['left', 'top', 'bottom', 'right']
+     first frame with depth>0 per side (ms after commit): left=66.8, top=91.6, bottom=116.4, right=141.5
+     frames at peak 1.15: left=(258.0, 794.6), top=(258.0, 794.6), bottom=(258.0, 794.6), right=(258.0, 794.6)
+     peak colours (t,r,b,l) = ['#d7c697', '#bf9480', '#cdac86', '#b2be99']
+     last logged (1695.7 ms): d=[1.0, 1.0, 1.0, 1.0] c=['#c8a48b', '#c8a48b', '#c8a48b', '#c8a48b'] flags=
+  relay absent from since_commit = 1158.3 ms
+  link: first frame (0.0, (0.0, 0.0, False)), pattern=1 from 141.5 to 794.6, last (1695.7, (0.0, 1.0, False))
+  pending frames: 25, from 0.0 to 203.3 ms after click; max depth 0.720; colours {'#c8a48b'}
+== t11/rel-supersede.log
+   # event t=1006.3ms click action=1 wall=1006.2
+   # event t=1281.0ms click action=2 wall=1280.9
+   # event t=1610.0ms click action=3 wall=1609.9
+   # event t=1610.0ms stale commit action=1 ignored (current=3)
+   # event t=1883.3ms stale commit action=2 ignored (current=3)
+   # event t=2215.4ms commit action=3 (worker sent at wall 2215.0 ms)
+  frames logged: 222 total, 186 animating; interval between consecutive animating frames ms (n=182): mean 9.12 median 8.30 p95 16.69 max 16.94
+  wake-up intervals into an animating frame after an idle gap (ms): [17.2, 14.3, 8.4, 329.9]
+  cpu per frame (update+tessellate+paint, excl. vsync) while animating: median 0.350 p95 1.269 max 1.794 ms
+  effect build (rects->meshes, set) while animating: median 128 p95 535 max 645 us
+  cpu per frame when not animating: median 0.283 ms (n=33)
+  repaint policy decisions: {'none': 33, 'now': 186, 'after': 3}
+  last animating frame at since_commit = 1123.2 ms
+  source: rank(top,right,bottom,left)=[0, 2, 1, 3] order=['top', 'bottom', 'right', 'left']
+     first frame with depth>0 per side (ms after commit): top=3.3, bottom=40.9, right=65.3, left=90.8
+     frames at peak 1.15: top=(498.3, 798.2), bottom=(498.3, 798.2), right=(498.3, 798.2), left=(498.3, 798.2)
+     peak colours (t,r,b,l) = ['#b2be99', '#cdac86', '#d7c697', '#bf9480']
+     last logged (1498.2 ms): d=[1.0, 1.0, 1.0, 1.0] c=['#c8a48b', '#c8a48b', '#c8a48b', '#c8a48b'] flags=
+  relay: rank(top,right,bottom,left)=[0, 1, 3, 2] order=['top', 'right', 'left', 'bottom']
+     first frame with depth>0 per side (ms after commit): top=15.3, right=49.0, left=73.9, bottom=101.1
+     frames at peak 1.15: top=(515.0, 798.2), right=(515.0, 798.2), left=(515.0, 798.2), bottom=(515.0, 798.2)
+     peak colours (t,r,b,l) = ['#b2be99', '#d7c697', '#bf9480', '#cdac86']
+     last logged (1148.2 ms): d=[1.0, 1.0, 1.0, 1.0] c=['#c8a48b', '#c8a48b', '#c8a48b', '#c8a48b'] flags=
+  header: rank(top,right,bottom,left)=[2, 3, 1, 0] order=['left', 'bottom', 'top', 'right']
+     first frame with depth>0 per side (ms after commit): left=40.9, bottom=73.9, top=98.5, right=124.1
+     frames at peak 1.15: left=(539.8, 798.2), bottom=(539.8, 798.2), top=(539.8, 798.2), right=(539.8, 798.2)
+     peak colours (t,r,b,l) = ['#cdac86', '#bf9480', '#d7c697', '#b2be99']
+     last logged (1498.2 ms): d=[1.0, 1.0, 1.0, 1.0] c=['#c8a48b', '#c8a48b', '#c8a48b', '#c8a48b'] flags=
+  result: rank(top,right,bottom,left)=[1, 3, 2, 0] order=['left', 'top', 'bottom', 'right']
+     first frame with depth>0 per side (ms after commit): left=65.3, top=90.8, bottom=115.3, right=140.6
+     frames at peak 1.15: left=(265.1, 798.2), top=(265.1, 798.2), bottom=(265.1, 798.2), right=(265.1, 798.2)
+     peak colours (t,r,b,l) = ['#d7c697', '#bf9480', '#cdac86', '#b2be99']
+     last logged (1498.2 ms): d=[1.0, 1.0, 1.0, 1.0] c=['#c8a48b', '#c8a48b', '#c8a48b', '#c8a48b'] flags=
+  relay absent from since_commit = 1164.8 ms
+  link: first frame (0.0, (0.0, 0.0, False)), pattern=1 from 140.6 to 789.8, last (1498.2, (0.0, 1.0, False))
+  pending frames: 81, from 0.0 to 275.5 ms after click; max depth 0.720; colours {'#c8a48b'}
+== t11/rel-reduced.log
+   # event t=512.2ms reduced_motion=true settle_now
+   # event t=1007.0ms click action=1 wall=1006.9
+   # event t=1612.2ms commit action=1 (worker sent at wall 1612.0 ms)
+  cpu per frame when not animating: median 0.335 ms (n=50)
+  repaint policy decisions: {'none': 30, 'after': 23}
+  last animating frame at since_commit = None ms
+  source: rank(top,right,bottom,left)=[0, 2, 1, 3] order=['top', 'bottom', 'right', 'left']
+     first frame with depth>0 per side (ms after commit): top=0.0, bottom=0.0, right=0.0, left=0.0
+     frames at peak 1.15: top=None, bottom=None, right=None, left=None
+     last logged (1703.3 ms): d=[1.0, 1.0, 1.0, 1.0] c=['#c8a48b', '#c8a48b', '#c8a48b', '#c8a48b'] flags=
+  relay: rank(top,right,bottom,left)=[0, 1, 3, 2] order=['top', 'right', 'left', 'bottom']
+     first frame with depth>0 per side (ms after commit): top=0.0, right=0.0, left=0.0, bottom=0.0
+     frames at peak 1.15: top=None, right=None, left=None, bottom=None
+     last logged (1154.7 ms): d=[1.0, 1.0, 1.0, 1.0] c=['#c8a48b', '#c8a48b', '#c8a48b', '#c8a48b'] flags=
+  header: rank(top,right,bottom,left)=[2, 3, 1, 0] order=['left', 'bottom', 'top', 'right']
+     first frame with depth>0 per side (ms after commit): left=0.0, bottom=0.0, top=0.0, right=0.0
+     frames at peak 1.15: left=None, bottom=None, top=None, right=None
+     last logged (1703.3 ms): d=[1.0, 1.0, 1.0, 1.0] c=['#c8a48b', '#c8a48b', '#c8a48b', '#c8a48b'] flags=
+  result: rank(top,right,bottom,left)=[1, 3, 2, 0] order=['left', 'top', 'bottom', 'right']
+     first frame with depth>0 per side (ms after commit): left=0.0, top=0.0, bottom=0.0, right=0.0
+     frames at peak 1.15: left=None, top=None, bottom=None, right=None
+     last logged (1703.3 ms): d=[1.0, 1.0, 1.0, 1.0] c=['#c8a48b', '#c8a48b', '#c8a48b', '#c8a48b'] flags=
+  relay absent from since_commit = 1155.1 ms
+  link: first frame (0.0, (0.0, 1.0, False)), pattern=1 from None to None, last (1703.3, (0.0, 1.0, False))
+  pending frames: 1, from 0.0 to 0.0 ms after click; max depth 0.720; colours {'#c8a48b'}
+== t11/rel-toggle.log
+   # event t=1000.3ms click action=1 wall=1000.2
+   # event t=1601.4ms commit action=1 (worker sent at wall 1601.1 ms)
+   # event t=2001.9ms reduced_motion=true settle_now
+   # event t=2309.6ms reduced_motion=false settle_now
+  frames logged: 96 total, 75 animating; interval between consecutive animating frames ms (n=73): mean 7.95 median 8.09 p95 14.83 max 15.40
+  wake-up intervals into an animating frame after an idle gap (ms): [8.0, 391.0]
+  cpu per frame (update+tessellate+paint, excl. vsync) while animating: median 0.654 p95 1.326 max 1.407 ms
+  effect build (rects->meshes, set) while animating: median 317 p95 500 max 539 us
+  cpu per frame when not animating: median 0.825 ms (n=18)
+  repaint policy decisions: {'none': 21, 'now': 75}
+  last animating frame at since_commit = 392.3 ms
+  source: rank(top,right,bottom,left)=[0, 2, 1, 3] order=['top', 'bottom', 'right', 'left']
+     first frame with depth>0 per side (ms after commit): top=1.9, bottom=30.8, right=66.6, left=91.5
+     frames at peak 1.15: top=None, bottom=None, right=None, left=None
+     last logged (3010.4 ms): d=[1.0, 1.0, 1.0, 1.0] c=['#c8a48b', '#c8a48b', '#c8a48b', '#c8a48b'] flags=(settled)
+  relay: rank(top,right,bottom,left)=[0, 1, 3, 2] order=['top', 'right', 'left', 'bottom']
+     first frame with depth>0 per side (ms after commit): top=24.9, right=49.9, left=74.8, bottom=100.0
+     frames at peak 1.15: top=None, right=None, left=None, bottom=None
+     last logged (392.3 ms): d=[0.902, 0.913, 0.942, 0.926] c=['#c29881', '#b6b292', '#d2b98f', '#c9c398'] flags=
+  header: rank(top,right,bottom,left)=[2, 3, 1, 0] order=['left', 'bottom', 'top', 'right']
+     first frame with depth>0 per side (ms after commit): left=41.6, bottom=74.8, top=100.0, right=124.9
+     frames at peak 1.15: left=None, bottom=None, top=None, right=None
+     last logged (3010.4 ms): d=[1.0, 1.0, 1.0, 1.0] c=['#c8a48b', '#c8a48b', '#c8a48b', '#c8a48b'] flags=(settled)
+  result: rank(top,right,bottom,left)=[1, 3, 2, 0] order=['left', 'top', 'bottom', 'right']
+     first frame with depth>0 per side (ms after commit): left=66.6, top=91.5, bottom=117.2, right=141.5
+     frames at peak 1.15: left=(254.9, 392.3), top=(254.9, 392.3), bottom=(267.2, 392.3), right=(267.2, 392.3)
+     peak colours (t,r,b,l) = ['#d7c697', '#bf9480', '#cdac86', '#b2be99']
+     last logged (3010.4 ms): d=[1.0, 1.0, 1.0, 1.0] c=['#c8a48b', '#c8a48b', '#c8a48b', '#c8a48b'] flags=(settled)
+  relay absent from since_commit = 400.5 ms
+  link: first frame (0.0, (0.0, 0.0, False)), pattern=1 from 141.5 to 392.3, last (3010.4, (0.0, 1.0, True))
+  pending frames: 26, from 0.0 to 210.2 ms after click; max depth 0.720; colours {'#c8a48b'}
+== t11/shots-reveal.log
+   # event t=1004.7ms click action=1 wall=1009.7
+   # event t=1612.6ms commit action=1 (worker sent at wall 1614.8 ms)
+  frames logged: 284 total, 158 animating; interval between consecutive animating frames ms (n=156): mean 8.36 median 8.14 p95 14.19 max 14.88
+  wake-up intervals into an animating frame after an idle gap (ms): [11.0, 6.6]
+  cpu per frame (update+tessellate+paint, excl. vsync) while animating: median 6.053 p95 7.684 max 10.648 ms
+  effect build (rects->meshes, set) while animating: median 113 p95 130 max 146 us
+  cpu per frame when not animating: median 6.070 ms (n=123)
+  repaint policy decisions: {'none': 122, 'now': 158, 'after': 4}
+  last animating frame at since_commit = 1120.6 ms
+  source: rank(top,right,bottom,left)=[0, 2, 1, 3] order=['top', 'bottom', 'right', 'left']
+     first frame with depth>0 per side (ms after commit): top=14.1, bottom=28.4, right=58.5, left=92.0
+     frames at peak 1.15: top=(495.4, 795.6), bottom=(495.4, 795.6), right=(495.4, 795.6), left=(495.4, 795.6)
+     peak colours (t,r,b,l) = ['#b2be99', '#cdac86', '#d7c697', '#bf9480']
+     last logged (1697.4 ms): d=[1.0, 1.0, 1.0, 1.0] c=['#c8a48b', '#c8a48b', '#c8a48b', '#c8a48b'] flags=
+  relay: rank(top,right,bottom,left)=[0, 1, 3, 2] order=['top', 'right', 'left', 'bottom']
+     first frame with depth>0 per side (ms after commit): top=22.6, right=50.1, left=76.3, bottom=100.2
+     frames at peak 1.15: top=(508.5, 795.6), right=(508.5, 795.6), left=(508.5, 795.6), bottom=(508.5, 795.6)
+     peak colours (t,r,b,l) = ['#b2be99', '#d7c697', '#bf9480', '#cdac86']
+     last logged (1150.9 ms): d=[1.0, 1.0, 1.0, 1.0] c=['#c8a48b', '#c8a48b', '#c8a48b', '#c8a48b'] flags=
+  header: rank(top,right,bottom,left)=[2, 3, 1, 0] order=['left', 'bottom', 'top', 'right']
+     first frame with depth>0 per side (ms after commit): left=42.2, bottom=76.3, top=100.2, right=124.4
+     frames at peak 1.15: left=(537.3, 795.6), bottom=(537.3, 795.6), top=(537.3, 795.6), right=(537.3, 795.6)
+     peak colours (t,r,b,l) = ['#cdac86', '#bf9480', '#d7c697', '#b2be99']
+     last logged (1697.4 ms): d=[1.0, 1.0, 1.0, 1.0] c=['#c8a48b', '#c8a48b', '#c8a48b', '#c8a48b'] flags=
+  result: rank(top,right,bottom,left)=[1, 3, 2, 0] order=['left', 'top', 'bottom', 'right']
+     first frame with depth>0 per side (ms after commit): left=58.5, top=83.7, bottom=116.6, right=139.2
+     frames at peak 1.15: left=(258.3, 795.6), top=(258.3, 795.6), bottom=(258.3, 795.6), right=(258.3, 795.6)
+     peak colours (t,r,b,l) = ['#d7c697', '#bf9480', '#cdac86', '#b2be99']
+     last logged (1697.4 ms): d=[1.0, 1.0, 1.0, 1.0] c=['#c8a48b', '#c8a48b', '#c8a48b', '#c8a48b'] flags=
+  relay absent from since_commit = 1159.1 ms
+  link: first frame (0.0, (0.0, 0.0, False)), pattern=1 from 147.5 to 795.6, last (1697.4, (0.0, 1.0, False))
+  pending frames: 73, from 0.0 to 601.3 ms after click; max depth 0.720; colours {'#c8a48b'}

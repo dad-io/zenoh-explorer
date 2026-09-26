@@ -1,0 +1,21 @@
+[advisories]
+# rsa Marvin attack: no fixed release exists; pulled in by zenoh-transport for
+# RSA auth, which this app does not configure.
+# lz4_flex: zenoh-transport 1.10 pins lz4_flex 0.10.x; track upstream.
+# quick-xml 0.30 (RUSTSEC-2026-0194 quadratic duplicate-attribute check,
+# RUSTSEC-2026-0195 unbounded namespace allocation): Linux and the BSDs only, via
+# eframe 0.29 accesskit -> egui-winit -> accesskit_winit -> accesskit_unix ->
+# atspi 0.22 / accesskit_atspi_common -> atspi-common 0.6 -> zbus-lockstep and
+# zbus-lockstep-macros 0.4 -> zbus_xml 4.0 (one path of several). Only
+# atspi-common pulls it in: the zbus-lockstep-macros #[validate] attribute it
+# applies parses XML on the build host while compiling, and atspi-common's own
+# #[cfg(test)] code parses XML when its tests run. The app's code never calls
+# it, and its only run-time callers are that test code. With accesskit_winit
+# 0.22.4 no patched quick-xml is reachable; pinning accesskit_winit 0.22.1,
+# accesskit_unix 0.12.1 and accesskit_atspi_common 0.9.1 in Cargo.lock would drop
+# quick-xml 0.30, but brings an older AT-SPI stack (atspi 0.19, zbus 3) and two
+# unmaintained crates (derivative, instant). On 2026-09-25 the user chose to keep
+# accesskit (screen-reader support) and ignore these two; the pin alternative
+# was found afterwards and is still open to them. Remove these two when P3 moves
+# to egui/eframe 0.36.
+ignore = ["RUSTSEC-2023-0071", "RUSTSEC-2026-0041", "RUSTSEC-2026-0194", "RUSTSEC-2026-0195"]

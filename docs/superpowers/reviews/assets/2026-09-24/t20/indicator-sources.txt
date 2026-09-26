@@ -1,0 +1,494 @@
+# T20 evidence: identifier greps (where each state variable is written/read) plus line excerpts for non-grep citations (HEAD 6a52865, working tree src/ unmodified)
+# git diff --stat -- src Cargo.toml .github assets:
+(empty = unmodified)
+
+== grep -rn 'message_count' src
+src/types.rs:71:    pub message_count: usize,
+src/types.rs:88:            message_count: 0,
+src/types.rs:136:        self.message_count += 1;
+src/types.rs:495:    pub message_count: usize,
+src/types.rs:503:            message_count: 0,
+src/types.rs:516:            self.message_count = 1;
+src/types.rs:518:        } else if self.message_count < self.max_messages_per_second {
+src/types.rs:519:            self.message_count += 1;
+src/ui/topic_tree.rs:400:            let (message_count, payload_opt, encoding_opt) =
+src/ui/topic_tree.rs:404:                            node.message_count,
+src/ui/topic_tree.rs:418:                ui.label(message_count.to_string());
+src/ui/topic_tree.rs:722:                leader_line_with_count(ui, None, node.message_count, self.text_tertiary_color());
+
+== grep -rn 'cumulative_leaves' src
+src/types.rs:76:    pub cumulative_leaves: usize,
+src/types.rs:92:            cumulative_leaves: 1, // Every node starts as its own leaf
+src/types.rs:98:    /// Maintains `cumulative_leaves` (count of leaf nodes in each subtree)
+src/types.rs:122:                node.cumulative_leaves += 1;
+src/types.rs:612:        assert_eq!(root.cumulative_leaves, 3);
+src/types.rs:613:        assert_eq!(root.children["a"].cumulative_leaves, 2);
+src/types.rs:616:        assert_eq!(root.cumulative_leaves, 3);
+src/types.rs:624:        assert_eq!(root.cumulative_leaves, 2);
+src/types.rs:627:        assert_eq!(root.cumulative_leaves, 2);
+src/types.rs:628:        assert_eq!(root.children["a"].cumulative_leaves, 1);
+src/types.rs:639:        assert_eq!(root.cumulative_leaves, 1);
+src/ui/topic_tree.rs:742:            let cumulative_leaves = node.cumulative_leaves;
+src/ui/topic_tree.rs:795:                    leader_line_with_count(ui, Some(expanded), cumulative_leaves, tertiary);
+
+== grep -rn 'messages.len()' src
+src/events.rs:336:                    || self.messages.len() >= self.max_messages)
+src/events.rs:347:        if self.messages.len() >= self.max_messages {
+src/ui/messages.rs:30:            ui.label(format!("Messages: {}", self.messages.len()));
+src/ui/messages.rs:76:                let start_idx = self.messages.len().saturating_sub(MAX_RENDERED_MESSAGES);
+
+== grep -rn 'messages_dropped' src
+src/events.rs:341:                    self.messages_dropped += 1;
+src/events.rs:351:                self.messages_dropped += 1;
+src/app.rs:56:    pub(crate) messages_dropped: usize,
+src/app.rs:154:            messages_dropped: 0,
+src/app.rs:400:                            || self.messages_dropped > 0
+src/app.rs:446:                            if self.messages_dropped > 0 || self.rate_limit_drops > 0 {
+src/app.rs:450:                                        self.messages_dropped, self.rate_limit_drops
+src/app.rs:453:                                    format!("({} dropped)", self.messages_dropped)
+src/ui/messages.rs:25:                self.messages_dropped = 0;
+
+== grep -rn 'rate_limit_drops' src
+src/events.rs:205:            self.rate_limit_drops += 1;
+src/app.rs:58:    pub(crate) rate_limit_drops: usize,
+src/app.rs:156:            rate_limit_drops: 0,
+src/app.rs:446:                            if self.messages_dropped > 0 || self.rate_limit_drops > 0 {
+src/app.rs:447:                                let drop_text = if self.rate_limit_drops > 0 {
+src/app.rs:450:                                        self.messages_dropped, self.rate_limit_drops
+src/ui/messages.rs:26:                self.rate_limit_drops = 0;
+
+== grep -rn 'messages_deduped' src
+src/events.rs:197:                self.messages_deduped += 1;
+src/app.rs:63:    pub(crate) messages_deduped: usize,
+src/app.rs:161:            messages_deduped: 0,
+src/ui/messages.rs:61:            if self.messages_deduped > 0 {
+src/ui/messages.rs:63:                    RichText::new(format!("({} deduped)", self.messages_deduped))
+
+== grep -rn 'current_memory_bytes' src
+src/events.rs:331:        if self.current_memory_bytes + message_size > max_memory_bytes && !self.messages.is_empty()
+src/events.rs:335:                && (self.current_memory_bytes + message_size > max_memory_bytes
+src/events.rs:339:                    self.current_memory_bytes =
+src/events.rs:340:                        self.current_memory_bytes.saturating_sub(old_msg.size_bytes);
+src/events.rs:349:                self.current_memory_bytes =
+src/events.rs:350:                    self.current_memory_bytes.saturating_sub(old_msg.size_bytes);
+src/events.rs:356:        self.current_memory_bytes += message_size;
+src/app.rs:51:    pub(crate) current_memory_bytes: usize,
+src/app.rs:149:            current_memory_bytes: 0,
+src/app.rs:398:                            self.current_memory_bytes + self.import_memory_bytes;
+src/app.rs:429:                                    self.current_memory_bytes as f32 / (1024.0 * 1024.0),
+src/ui/messages.rs:24:                self.current_memory_bytes = 0;
+
+== grep -rn 'import_memory_bytes' src
+src/app.rs:37:    pub(crate) import_memory_bytes: usize,
+src/app.rs:135:            import_memory_bytes: 0,
+src/app.rs:398:                            self.current_memory_bytes + self.import_memory_bytes;
+src/app.rs:401:                            || self.import_memory_bytes > 0
+src/app.rs:424:                            let memory_text = if self.import_memory_bytes > 0 {
+src/app.rs:426:                                    self.import_memory_bytes as f32 / (1024.0 * 1024.0);
+src/ui/publish.rs:80:                                self.import_memory_bytes = bytes.len();
+src/ui/publish.rs:89:                                self.import_memory_bytes = 0;
+src/ui/publish.rs:98:                    self.import_memory_bytes = 0;
+src/ui/publish.rs:252:                    self.import_memory_bytes = 0; // Memory freed after publish
+
+== grep -rn 'discovered_peers' src
+src/events.rs:105:                    self.discovered_peers = 0;
+src/events.rs:110:                    self.discovered_peers = peers;
+src/app.rs:20:    pub(crate) discovered_peers: usize,
+src/app.rs:118:            discovered_peers: 0,
+src/app.rs:380:                            && (self.discovered_peers > 0 || self.discovered_routers > 0)
+src/app.rs:386:                            if self.discovered_peers > 0 {
+src/app.rs:387:                                parts.push(format!("{}P", self.discovered_peers));
+
+== grep -rn 'worker_healthy' src
+src/events.rs:144:                    self.worker_healthy = true;
+src/events.rs:156:                    self.worker_healthy = false;
+src/events.rs:162:                self.worker_healthy = false;
+src/app.rs:61:    pub(crate) worker_healthy: bool,
+src/app.rs:159:            worker_healthy: true,
+src/app.rs:345:                        if !self.worker_healthy {
+
+== grep -rn 'last_health_check' src
+src/events.rs:145:                    self.last_health_check = Instant::now();
+src/events.rs:151:        if self.last_health_check.elapsed() > Duration::from_secs(5) {
+src/events.rs:161:            if self.last_health_check.elapsed() > Duration::from_secs(15) {
+src/app.rs:60:    pub(crate) last_health_check: Instant,
+src/app.rs:158:            last_health_check: Instant::now(),
+
+== grep -rn 'last_seen' src
+src/types.rs:70:    pub last_seen: Instant,
+src/types.rs:87:            last_seen: Instant::now(),
+src/types.rs:135:        self.last_seen = Instant::now();
+src/types.rs:164:        node.last_seen = Instant::now();
+
+== grep -rn 'last_update' src
+src/types.rs:53:    pub last_update: Instant,
+src/types.rs:158:                last_update: Instant::now(),
+src/types.rs:163:        t.last_update = Instant::now();
+
+== grep -rn 'Utc::now' src
+src/zenoh_worker.rs:247:                                                                            Utc::now(),
+src/zenoh_worker.rs:357:                                        chrono::Utc::now().timestamp_millis(),
+src/zenoh_worker.rs:408:                                                                Utc::now(),
+src/zenoh_worker.rs:628:                                    Utc::now(),
+src/zenoh_worker.rs:725:                                                        Utc::now(),
+
+== grep -rn 'received_at' src
+src/events.rs:300:                        received_at: message.timestamp,
+src/types.rs:174:    pub received_at: DateTime<Utc>,
+src/transfer.rs:97:                .min_by_key(|(_, e)| e.received_at)
+src/transfer.rs:129:                    .or_insert_with(|| (Default::default(), e.received_at));
+src/transfer.rs:131:                if e.received_at > g.1 {
+src/transfer.rs:132:                    g.1 = e.received_at;
+src/transfer.rs:300:            received_at: chrono::Utc.timestamp_opt(ts_secs, 0).unwrap(),
+src/transfer.rs:308:            received_at: chrono::Utc.timestamp_opt(ts, 0).unwrap(),
+
+== grep -rn 'animate_pulse' src
+src/app.rs:294:    pub(crate) fn animate_pulse(&self, ctx: &egui::Context, _id: &str) -> f32 {
+src/app.rs:346:                            let pulse = self.animate_pulse(ui.ctx(), "worker_health_pulse");
+
+== grep -rn 'animate_fade_in' src
+src/app.rs:289:    pub(crate) fn animate_fade_in(&self, ctx: &egui::Context, id: &str, target: f32) -> f32 {
+src/ui/topic_tree.rs:655:                        self.animate_fade_in(ui.ctx(), &format!("local_leaf_{}", full_path), 1.0);
+src/ui/topic_tree.rs:760:                        let fade = self.animate_fade_in(
+
+== grep -rn 'request_repaint' src
+src/app.rs:184:        ctx.request_repaint_after(std::time::Duration::from_millis(66));
+src/app.rs:360:                            ui.ctx().request_repaint_after(
+src/app.rs:716:        ctx.request_repaint_after(std::time::Duration::from_millis(66));
+
+== grep -rn 'animation_time' src
+src/app.rs:187:            style.animation_time = 0.001;
+
+== grep -rn 'spinner' src
+src/app.rs:371:                            ui.spinner();
+
+== grep -rn 'ProgressBar' src
+src/ui/topic_tree.rs:109:        egui::ProgressBar::new(frac)
+
+== grep -rn 'CHUNK_SIZE' src
+src/zenoh_worker.rs:515:                            const CHUNK_SIZE: usize = 64 * 1024 * 1024; // 64MB chunks
+src/zenoh_worker.rs:520:                                let total_chunks = payload_len.div_ceil(CHUNK_SIZE);
+src/zenoh_worker.rs:525:                                    CHUNK_SIZE / 1024 / 1024
+src/zenoh_worker.rs:533:                                    let end = std::cmp::min(offset + CHUNK_SIZE, payload_len);
+src/transfer.rs:8://! - CHUNK_SIZE = 64MB (publish side, in zenoh_worker.rs)
+src/transfer.rs:18:/// Publish-side chunk size (must match zenoh_worker.rs CHUNK_SIZE).
+src/transfer.rs:19:pub const CHUNK_SIZE: usize = 64 * 1024 * 1024;
+src/transfer.rs:39:            && self.total_size <= self.total_chunks.saturating_mul(CHUNK_SIZE)
+src/transfer.rs:379:                format!("big/file/__chunk/{}/600/{}", 600 * CHUNK_SIZE, i),
+src/ui/topic_tree.rs:130:                        .saturating_mul(crate::transfer::CHUNK_SIZE)
+
+== grep -rn 'paused_keys' src
+src/events.rs:219:        let display = !is_chunk && !self.paused_keys.contains(&message.key);
+src/app.rs:68:    pub(crate) paused_keys: std::collections::HashSet<String>,
+src/app.rs:165:            paused_keys: std::collections::HashSet::new(),
+src/ui/topic_tree.rs:363:                let is_paused = self.paused_keys.contains(topic);
+src/ui/topic_tree.rs:381:                        self.paused_keys.remove(topic);
+src/ui/topic_tree.rs:383:                        self.paused_keys.insert(topic.clone());
+
+== grep -rn 'is_local = true\|mark_as_local' src
+src/events.rs:273:            let mark_as_local = message.is_local && message.message_type == MessageType::Publish;
+src/events.rs:274:            current_node.update_data(payload_for_tree, message.encoding.clone(), mark_as_local);
+src/types.rs:141:            self.is_local = true;
+
+== grep -rn 'MonitorConnected' src
+src/types.rs:338:    MonitorConnected,
+src/events.rs:98:                ZenohEvent::MonitorConnected => {
+src/events.rs:100:                    info!("GUI received MonitorConnected event - fully connected");
+src/zenoh_worker.rs:278:                                        // Send MonitorConnected event (both sessions now ready)
+src/zenoh_worker.rs:279:                                        match event_sender.send(ZenohEvent::MonitorConnected) {
+src/zenoh_worker.rs:281:                                                "Successfully sent MonitorConnected event to GUI"
+src/zenoh_worker.rs:284:                                                "Failed to send MonitorConnected event: {:?}",
+src/zenoh_worker.rs:293:                                        match event_sender.send(ZenohEvent::MonitorConnected) {
+src/zenoh_worker.rs:294:                                            Ok(_) => info!("Sent MonitorConnected event (monitor failed but publishing works)"),
+src/zenoh_worker.rs:295:                                            Err(send_err) => error!("Failed to send MonitorConnected: {:?}", send_err),
+
+== grep -rn 'set_enabled(Some(false))' src
+src/zenoh_worker.rs:1062:        config.scouting.multicast.set_enabled(Some(false)).unwrap();
+src/zenoh_worker.rs:1195:        config.scouting.multicast.set_enabled(Some(false)).unwrap();
+src/zenoh_worker.rs:1196:        config.scouting.gossip.set_enabled(Some(false)).unwrap();
+src/zenoh_worker.rs:1210:        config.scouting.multicast.set_enabled(Some(false)).unwrap();
+
+== egui 0.29.1 facts
+-- animation_manager.rs:75-86 (first call returns target; constant target never animates)
+        match self.values.get_mut(&id) {
+            None => {
+                self.values.insert(
+                    id,
+                    ValueAnim {
+                        from_value: value,
+                        to_value: value,
+                        toggle_time: -f64::INFINITY, // long time ago
+                    },
+                );
+                value
+            }
+-- progress_bar.rs:34 (animate defaults false), :131-132
+            animate: false,
+            if animate {
+                ui.ctx().request_repaint();
+-- spinner.rs:40
+    pub fn paint_at(&self, ui: &Ui, rect: Rect) {
+        if ui.is_rect_visible(rect) {
+            ui.ctx().request_repaint(); // because it is animated
+
+
+== T1 traffic generator (assets/2026-09-24/app/zpub-traffic-generator.rs:12-23)
+        s.put("demo/sensors/temp1", format!("{:.1}", 21.0 + (tick % 10) as f64 / 10.0)).await.unwrap();
+        s.put("demo/sensors/humidity", format!("{}", 40 + tick % 5)).await.unwrap();
+        s.put("demo/robot/status", format!(r#"{{"state":"running","battery":{},"pose":{{"x":1.2,"y":3.4}}}}"#, 90 - tick % 10))
+            .encoding(zenoh::bytes::Encoding::APPLICATION_JSON).await.unwrap();
+        s.put("demo/logs/app", format!("tick {tick}: all systems nominal")).await.unwrap();
+        s.put("demo/bin/blob", vec![0u8, 1, 2, 250, 251, 252]).await.unwrap();
+        if tick < 3 {
+            s.put(format!("demo/files/report/__chunk/{total}/5/{tick}"), vec![7u8; 16])
+                .attachment("report.pdf").await.unwrap();
+        }
+        tick += 1;
+        tokio::time::sleep(Duration::from_millis(500)).await;
+
+== Dedup arithmetic (events.rs:186-210, types.rs:474-489, app.rs:160 TTL 60 s)
+A hash is recorded only when a message is accepted; a repeat within 60 s of that record is dropped
+and NOT re-recorded, so the next copy is accepted 60 s after the first acceptance.
+Generator, 2 puts/s per topic:
+  demo/sensors/temp1   10 distinct values cycling  -> 10 accepted per ~60 s (of 120 sent)
+  demo/sensors/humidity 5 distinct values          ->  5 accepted per ~60 s (of 120 sent)
+  demo/robot/status    10 distinct values          -> 10 accepted per ~60 s (of 120 sent)
+  demo/logs/app        unique payload each tick    -> 120 accepted per 60 s
+  demo/bin/blob        identical 6 bytes each tick ->  1 accepted per ~60 s (of 120 sent)
+Observed in dark-1400-03: temp1 "Messages: 20", humidity 10; history 13:21:03.103-13:21:07.626 (10 rows,
+one per value) then a jump to 13:20:05.037 -> ~58 s gap while the generator sent every 500 ms.
+Crop: crop-temp1-history-dedup-gap.png
+
+== Pulse (app.rs:294-297): alpha = 0.85 + 0.15*sin(3t); period 2*pi/3 = 2.094 s; alpha range 0.70-1.00;
+sampled at the 66 ms heartbeat (app.rs:360, 716) -> ~15 fps steps, ~32 samples per cycle.
+
+== Claimed transfer bytes (topic_tree.rs:125-134): received.len() * 64 MiB capped at total_size.
+T1 transfer: 3 chunks of 16 bytes = 48 bytes received; row reads "192.00 MB of 256.00 MB".
+
+== Line excerpts for citations that identifier greps do not cover
+-- src/ui/topic_tree.rs:521-527
+521	                if let Some(encoding) = encoding_opt {
+522	                    ui.separator();
+523	                    ui.horizontal(|ui| {
+524	                        ui.label(RichText::new("Encoding:").strong());
+525	                        ui.label(encoding);
+526	                    });
+527	                }
+-- src/ui/topic_tree.rs:535-559
+535	                let topic_messages: Vec<_> = self
+536	                    .messages
+537	                    .iter()
+538	                    .filter(|m| m.key == *topic)
+539	                    .rev()
+540	                    .take(50)
+541	                    .collect();
+542	
+543	                if topic_messages.is_empty() {
+544	                    ui.vertical_centered(|ui| {
+545	                        ui.add_space(16.0);
+546	                        ui.label(
+547	                            RichText::new("No messages yet")
+548	                                .size(HEADING_MEDIUM_SIZE)
+549	                                .color(self.text_tertiary_color()),
+550	                        );
+551	                        ui.add_space(4.0);
+552	                        ui.label(
+553	                            RichText::new("Waiting for messages on this topic...")
+554	                                .italics()
+555	                                .size(TEXT_SMALL_SIZE)
+556	                                .color(self.text_secondary_color()),
+557	                        );
+558	                        ui.add_space(16.0);
+559	                    });
+-- src/ui/topic_tree.rs:711-719
+711	                // Quick save on rows with an exportable payload
+712	                let exportable = node.transfer.as_ref().is_some_and(|t| t.is_complete())
+713	                    || self
+714	                        .payload_store
+715	                        .read()
+716	                        .is_ok_and(|s| s.contains_key(&full_path));
+717	                if exportable && ui.small_button("💾").on_hover_text("Save file").clicked() {
+718	                    self.save_topic_to_file(&full_path);
+719	                }
+-- src/ui/topic_tree.rs:780-787
+780	                    let icon = if depth == 0 { "🌐" } else { "📡" };
+781	                    let response =
+782	                        ui.selectable_label(is_selected, format!("{} {}", icon, node.key));
+783	
+784	                    if response.clicked() {
+785	                        self.selected_topic = Some(full_path.clone());
+786	                        self.detail_view = DetailView::TopicDetails;
+787	                    }
+-- src/events.rs:168-183
+168	    fn process_single_message(&mut self, message: ZenohMessage) {
+169	        // For query replies, handle "local wins" logic
+170	        if message.message_type == MessageType::QueryReply {
+171	            let existing_idx = self
+172	                .messages
+173	                .iter()
+174	                .position(|m| m.key == message.key && m.message_type == MessageType::QueryReply);
+175	
+176	            if let Some(idx) = existing_idx {
+177	                if message.is_local && !self.messages[idx].is_local {
+178	                    self.messages[idx] = message;
+179	                    return;
+180	                } else if !message.is_local && self.messages[idx].is_local {
+181	                    return;
+182	                }
+183	            }
+-- src/events.rs:216-222
+216	        // Pause skips only DISPLAY (the messages list); storage and tree
+217	        // updates continue so no data is lost while paused.
+218	        let is_chunk = crate::transfer::parse_chunk_key(&message.key).is_some();
+219	        let display = !is_chunk && !self.paused_keys.contains(&message.key);
+220	
+221	        self.add_message_to_browse_tree(&message);
+222	        self.add_message_with_limits(message, display);
+-- src/transfer.rs:33-41
+33	impl ChunkMeta {
+34	    /// Values come from a network-controlled key string — reject anything that
+35	    /// could drive an absurd allocation or out-of-range index.
+36	    pub fn is_sane(&self) -> bool {
+37	        self.total_chunks > 0
+38	            && self.index < self.total_chunks
+39	            && self.total_size <= self.total_chunks.saturating_mul(CHUNK_SIZE)
+40	    }
+41	}
+-- src/transfer.rs:69-90
+69	pub fn insert_payload(store: &mut PayloadStoreMap, key: String, entry: PayloadEntry) {
+70	    if let Some((topic, meta)) = parse_chunk_key(&key) {
+71	        if !meta.is_sane() {
+72	            info!("Dropping chunk with insane metadata: {}", key);
+73	            return;
+74	        }
+75	        let prefix = format!("{}/__chunk/", topic);
+76	        let stale: Vec<String> = store
+77	            .keys()
+78	            .filter(|k| k.starts_with(&prefix))
+79	            .filter(|k| match parse_chunk_key(k) {
+80	                Some((_, m)) => {
+81	                    (m.total_size, m.total_chunks) != (meta.total_size, meta.total_chunks)
+82	                }
+83	                None => true,
+84	            })
+85	            .cloned()
+86	            .collect();
+87	        for k in stale {
+88	            store.remove(&k);
+89	        }
+90	        store.insert(key, entry);
+-- src/zenoh_worker.rs:242-252
+242	                                                                        let message = ZenohMessage::new_with_bytes(
+243	                                                                            sample.key_expr().to_string(),
+244	                                                                            payload_display,
+245	                                                                            raw_bytes,
+246	                                                                            "text/plain".to_string(),
+247	                                                                            Utc::now(),
+248	                                                                            MessageType::Subscribe,
+249	                                                                            false,  // Monitor messages are always from remote
+250	                                                                            MessageSource::MonitorSession,
+251	                                                                        )
+252	                                                                        .with_filename(filename);
+-- src/zenoh_worker.rs:273-297
+273	                                            Err(e) => {
+274	                                                error!("Failed to subscribe monitor to **: {}", e);
+275	                                            }
+276	                                        }
+277	
+278	                                        // Send MonitorConnected event (both sessions now ready)
+279	                                        match event_sender.send(ZenohEvent::MonitorConnected) {
+280	                                            Ok(_) => info!(
+281	                                                "Successfully sent MonitorConnected event to GUI"
+282	                                            ),
+283	                                            Err(e) => error!(
+284	                                                "Failed to send MonitorConnected event: {:?}",
+285	                                                e
+286	                                            ),
+287	                                        }
+288	                                    }
+289	                                    Err(e) => {
+290	                                        // Monitor session failed, but publishing session is still usable
+291	                                        error!("Failed to connect monitor session: {}", e);
+292	                                        // Still send Connected since publishing session works
+293	                                        match event_sender.send(ZenohEvent::MonitorConnected) {
+294	                                            Ok(_) => info!("Sent MonitorConnected event (monitor failed but publishing works)"),
+295	                                            Err(send_err) => error!("Failed to send MonitorConnected: {:?}", send_err),
+296	                                        }
+297	                                    }
+-- src/zenoh_worker.rs:518-520
+518	                            if payload_len > MAX_SINGLE_PAYLOAD {
+519	                                // Large payload - send in chunks
+520	                                let total_chunks = payload_len.div_ceil(CHUNK_SIZE);
+-- src/zenoh_worker.rs:547-562
+547	                                    match put.await {
+548	                                        Ok(_) => info!(
+549	                                            "Published chunk {}/{} ({} bytes) to {}",
+550	                                            chunk_num + 1,
+551	                                            total_chunks,
+552	                                            end - offset,
+553	                                            chunk_key
+554	                                        ),
+555	                                        Err(e) => {
+556	                                            error!(
+557	                                                "Failed to publish chunk {} to {}: {}",
+558	                                                chunk_num, chunk_key, e
+559	                                            );
+560	                                            all_ok = false;
+561	                                            break;
+562	                                        }
+-- src/zenoh_worker.rs:676-686
+676	                                                        sample.key_expr()
+677	                                                    );
+678	
+679	                                                    // Check if reply is from local queryable via attachment
+680	                                                    let is_local = sample
+681	                                                        .attachment()
+682	                                                        .and_then(|att| att.try_to_string().ok())
+683	                                                        .map(|att_str| {
+684	                                                            att_str.contains("source:local")
+685	                                                        })
+686	                                                        .unwrap_or(false);
+-- src/zenoh_worker.rs:853-858
+853	                                                                    // Mark reply as local by adding simple attachment
+854	                                                                    let _ = query
+855	                                                                        .reply(key.as_str(), payload)
+856	                                                                        .encoding(encoding.as_str())
+857	                                                                        .attachment("source:local")
+858	                                                                        .await;
+-- src/zenoh_worker.rs:1130-1135
+1130	}
+1131	
+1132	/// Connect a monitor session for observing all network traffic.
+1133	/// This session has scouting disabled to prevent interference with the publishing session
+1134	/// and uses a different port to avoid CONNECTION_TO_SELF errors.
+1135	///
+-- src/zenoh_worker.rs:1187-1206
+1187	    // Configure the connection mode
+1188	    if mode == "peer" {
+1189	        info!("Monitor session: Setting peer mode with scouting DISABLED");
+1190	        config.set_mode(Some(WhatAmI::Peer)).unwrap();
+1191	
+1192	        // CRITICAL: Disable scouting on monitor session to prevent interference
+1193	        // This prevents the monitor from participating in peer discovery
+1194	        // which could cause CONNECTION_TO_SELF errors
+1195	        config.scouting.multicast.set_enabled(Some(false)).unwrap();
+1196	        config.scouting.gossip.set_enabled(Some(false)).unwrap();
+1197	
+1198	        // Add listening endpoint with different port
+1199	        let port = monitor_port.parse::<u16>().unwrap_or(8447);
+1200	        let listen_endpoint = format!("{}/[::]:{}", protocol, port);
+1201	        info!("Monitor session: listening on {}", listen_endpoint);
+1202	        config
+1203	            .listen
+1204	            .endpoints
+1205	            .set(vec![listen_endpoint.parse().unwrap()])
+1206	            .unwrap();
+-- src/ui/help.rs:31-31
+31	        ui.label("2. Use Subscribe tab to listen to key expressions (e.g., demo/**)");
+-- src/ui/help.rs:54-54
+54	        ui.label("• Older messages are dropped when limits are exceeded");
+
+== F-T20-9 small repro (from code; not run)
+put x/__chunk/32/2/0 = 16 x 0xAA ; put x/__chunk/32/2/1 = 16 x 0xAA   -> is_sane: 2>0, idx<2, 32 <= 2*64MiB; tree "x ✓ 32 bytes"
+put x/__chunk/32/2/0 = 16 x 0xBB                                      -> same (size, chunks): no reset (types.rs:150-160), no purge (transfer.rs:76-89)
+Save -> chunk_progress: indices {0,1} of 2, total 32 -> get_payload_for_export writes BB..BB AA..AA (32 bytes), banner "✓ Saved to ..."

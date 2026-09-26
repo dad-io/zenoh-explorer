@@ -1,0 +1,54 @@
+# Scratch crate outside the repo; matcher logic copied (condensed) from src/zenoh_worker.rs:812-840; compared with zenoh-keyexpr 1.7.2 intersects(). Run 2026-09-25.
+
+--- examples/matcher.rs ---
+use zenoh_keyexpr::keyexpr;
+// Logic of zenoh_worker.rs:812-840, condensed but branch-for-branch (exact match checked first at :812)
+fn app_match(key_expr: &str, stored_key: &str) -> bool {
+    if key_expr == stored_key { return true; }
+    if key_expr.contains("**") {
+        let prefix = key_expr.trim_end_matches("**").trim_end_matches('/');
+        prefix.is_empty() || stored_key.starts_with(prefix)
+    } else if key_expr.contains('*') {
+        let parts: Vec<&str> = key_expr.split('/').collect();
+        let key_parts: Vec<&str> = stored_key.split('/').collect();
+        parts.len() == key_parts.len() && parts.iter().zip(key_parts.iter()).all(|(p, kp)| p == &"*" || p == kp)
+    } else { false }
+}
+fn main() {
+    println!("-- timeout parse (query.rs:84: self.query_timeout.parse().unwrap_or(10000), u64)");
+    for t in ["10000", "abc", "10 000", "10s", "-5", "1e4", " 500", "0", ""] {
+        let v: u64 = t.parse().unwrap_or(10000);
+        println!("{:?}\t-> {} ms", t, v);
+    }
+    println!("-- local queryable matcher vs zenoh intersects()");
+    for (q, k) in [("demo/**", "demo/sensors/temp1"), ("demo/**", "demonstration/x"), ("demo/**", "demo"),
+                   ("*/sensors/**", "demo/sensors/temp1"), ("demo/**/temp1", "demo/sensors/temp1"),
+                   ("demo/*", "demo/a"), ("demo/*/temp1", "demo/sensors/temp1"), ("demo/sens$*/temp1", "demo/sensors/temp1"),
+                   ("**", "anything/at/all")] {
+        let z = keyexpr::new(q).unwrap().intersects(keyexpr::new(k).unwrap());
+        println!("query {:<22} stored {:<22} app_match={:<5} zenoh_intersects={}{}", q, k, app_match(q,k), z,
+                 if app_match(q,k)!=z {"   <-- MISMATCH"} else {""});
+    }
+}
+
+--- output ---
+-- timeout parse (query.rs:84: self.query_timeout.parse().unwrap_or(10000), u64)
+"10000"	-> 10000 ms
+"abc"	-> 10000 ms
+"10 000"	-> 10000 ms
+"10s"	-> 10000 ms
+"-5"	-> 10000 ms
+"1e4"	-> 10000 ms
+" 500"	-> 10000 ms
+"0"	-> 0 ms
+""	-> 10000 ms
+-- local queryable matcher vs zenoh intersects()
+query demo/**                stored demo/sensors/temp1     app_match=true  zenoh_intersects=true
+query demo/**                stored demonstration/x        app_match=true  zenoh_intersects=false   <-- MISMATCH
+query demo/**                stored demo                   app_match=true  zenoh_intersects=true
+query */sensors/**           stored demo/sensors/temp1     app_match=false zenoh_intersects=true   <-- MISMATCH
+query demo/**/temp1          stored demo/sensors/temp1     app_match=false zenoh_intersects=true   <-- MISMATCH
+query demo/*                 stored demo/a                 app_match=true  zenoh_intersects=true
+query demo/*/temp1           stored demo/sensors/temp1     app_match=true  zenoh_intersects=true
+query demo/sens$*/temp1      stored demo/sensors/temp1     app_match=false zenoh_intersects=true   <-- MISMATCH
+query **                     stored anything/at/all        app_match=true  zenoh_intersects=true

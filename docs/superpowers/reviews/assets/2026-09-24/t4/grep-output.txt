@@ -1,0 +1,122 @@
+== per-pattern counts (grep -nE, files: src/app.rs src/ui/help.rs src/ui/messages.rs src/ui/mod.rs src/ui/publish.rs src/ui/query.rs src/ui/topic_tree.rs) ==
+\.button\(             12
+Button::new            4
+small_button           4
+selectable_label       6
+selectable_value       7
+ComboBox               2
+checkbox\(             3
+Checkbox               0
+text_edit_singleline   12
+text_edit_multiline    0
+TextEdit::             4
+DragValue              0
+Slider                 0
+radio                  0
+toggle_value           0
+hyperlink              0
+menu_button            0
+ui\.interact           0
+Sense::click           0
+Sense::                1
+\.collapsing\(         1
+CollapsingHeader       0
+CollapsingState        1
+show_toggle_button     1
+\.resizable\(          1
+\.clicked\(\)          26
+\.changed\(\)          4
+add_enabled            4
+on_hover_text          7
+
+== union of control-constructor patterns (distinct lines) ==
+src/app.rs:336:                            .button(if self.dark_mode { "☀" } else { "🌙" })
+src/app.rs:476:                            egui::ComboBox::from_id_salt("connect_transport")
+src/app.rs:480:                                    ui.selectable_value(
+src/app.rs:485:                                    ui.selectable_value(
+src/app.rs:490:                                    ui.selectable_value(
+src/app.rs:495:                                    ui.selectable_value(
+src/app.rs:500:                                    ui.selectable_value(
+src/app.rs:509:                                egui::TextEdit::singleline(&mut self.connect_address)
+src/app.rs:515:                                egui::TextEdit::singleline(&mut self.connect_port)
+src/app.rs:539:                            egui::ComboBox::from_id_salt("connection_mode")
+src/app.rs:542:                                    ui.selectable_value(
+src/app.rs:547:                                    ui.selectable_value(
+src/app.rs:559:                                    egui::TextEdit::singleline(&mut self.listen_port)
+src/app.rs:585:                        if ui.button("Connect").clicked() {
+src/app.rs:620:                        if ui.button("Disconnect").clicked() {
+src/app.rs:650:                            if ui.small_button("✖").clicked() {
+src/app.rs:662:                            .selectable_label(
+src/app.rs:671:                            .selectable_label(
+src/app.rs:680:                            .selectable_label(
+src/app.rs:689:                            .selectable_label(
+src/app.rs:701:                egui::SidePanel::left("tree_panel")
+src/ui/messages.rs:20:            ui.text_edit_singleline(&mut self.message_filter);
+src/ui/messages.rs:21:            ui.checkbox(&mut self.auto_scroll, "Auto-scroll");
+src/ui/messages.rs:22:            if ui.button("Clear").clicked() {
+src/ui/messages.rs:37:            if ui.text_edit_singleline(&mut limit_str).changed() {
+src/ui/messages.rs:45:            if ui.text_edit_singleline(&mut count_str).changed() {
+src/ui/messages.rs:53:            if ui.text_edit_singleline(&mut rate_str).changed() {
+src/ui/messages.rs:60:            ui.checkbox(&mut self.deduper.enabled, "Dedup");
+src/ui/publish.rs:31:                ui.text_edit_singleline(&mut self.publish_key);
+src/ui/publish.rs:37:                if ui.button("Import File").clicked() {
+src/ui/publish.rs:94:                if self.publish_payload_bytes.is_some() && ui.button("✖ Clear").clicked() {
+src/ui/publish.rs:126:                            if ui.button(button_text).clicked() {
+src/ui/publish.rs:188:                        egui::TextEdit::multiline(&mut self.publish_payload)
+src/ui/publish.rs:205:                ui.text_edit_singleline(&mut self.publish_encoding);
+src/ui/publish.rs:209:            let button = egui::Button::new("Publish");
+src/ui/publish.rs:270:                ui.text_edit_singleline(&mut self.queryable_pattern);
+src/ui/publish.rs:275:                ui.checkbox(&mut self.queryable_enabled, "Enable Queryable");
+src/ui/query.rs:50:                if ui.button("Dismiss").clicked() {
+src/ui/query.rs:63:                ui.text_edit_singleline(&mut self.query_selector);
+src/ui/query.rs:67:                ui.text_edit_singleline(&mut self.query_value);
+src/ui/query.rs:71:                ui.text_edit_singleline(&mut self.query_timeout);
+src/ui/query.rs:74:            let button = egui::Button::new("Query");
+src/ui/topic_tree.rs:34:        egui::Sense::hover(),
+src/ui/topic_tree.rs:164:                ui.text_edit_singleline(&mut self.tree_filter)
+src/ui/topic_tree.rs:166:                if ui.button("✖").clicked() {
+src/ui/topic_tree.rs:172:            if self.selected_topic.is_some() && ui.button("⬅ Back to All Messages").clicked() {
+src/ui/topic_tree.rs:179:            ui.collapsing("Subscribe to Topics", |ui| {
+src/ui/topic_tree.rs:182:                    ui.text_edit_singleline(&mut self.subscribe_key);
+src/ui/topic_tree.rs:184:                let button = egui::Button::new("Subscribe");
+src/ui/topic_tree.rs:210:                            if ui.small_button("✖").clicked() {
+src/ui/topic_tree.rs:345:                let button = egui::Button::new(RichText::new(&label).color(egui::Color32::WHITE))
+src/ui/topic_tree.rs:372:                    .button(RichText::new(button_text).color(button_color))
+src/ui/topic_tree.rs:449:                        if ui.small_button("💾 Save").clicked() {
+src/ui/topic_tree.rs:483:                    if ui.button(&button_text).clicked() {
+src/ui/topic_tree.rs:680:                let response = ui.selectable_label(is_selected, format!("{} {}", icon, node.key));
+src/ui/topic_tree.rs:717:                if exportable && ui.small_button("💾").on_hover_text("Save file").clicked() {
+src/ui/topic_tree.rs:755:                state.show_toggle_button(ui, plus_minus_icon);
+src/ui/topic_tree.rs:782:                        ui.selectable_label(is_selected, format!("{} {}", icon, node.key));
+
+== .clicked() / .changed() sites ==
+src/app.rs:337:                            .clicked()
+src/app.rs:585:                        if ui.button("Connect").clicked() {
+src/app.rs:620:                        if ui.button("Disconnect").clicked() {
+src/app.rs:650:                            if ui.small_button("✖").clicked() {
+src/app.rs:666:                            .clicked()
+src/app.rs:675:                            .clicked()
+src/app.rs:684:                            .clicked()
+src/app.rs:693:                            .clicked()
+src/ui/messages.rs:22:            if ui.button("Clear").clicked() {
+src/ui/messages.rs:37:            if ui.text_edit_singleline(&mut limit_str).changed() {
+src/ui/messages.rs:45:            if ui.text_edit_singleline(&mut count_str).changed() {
+src/ui/messages.rs:53:            if ui.text_edit_singleline(&mut rate_str).changed() {
+src/ui/publish.rs:37:                if ui.button("Import File").clicked() {
+src/ui/publish.rs:94:                if self.publish_payload_bytes.is_some() && ui.button("✖ Clear").clicked() {
+src/ui/publish.rs:126:                            if ui.button(button_text).clicked() {
+src/ui/publish.rs:197:            if payload_response.changed() && self.publish_payload_bytes.is_some() {
+src/ui/publish.rs:216:                .clicked()
+src/ui/query.rs:50:                if ui.button("Dismiss").clicked() {
+src/ui/query.rs:81:                .clicked()
+src/ui/topic_tree.rs:166:                if ui.button("✖").clicked() {
+src/ui/topic_tree.rs:172:            if self.selected_topic.is_some() && ui.button("⬅ Back to All Messages").clicked() {
+src/ui/topic_tree.rs:191:                    .clicked()
+src/ui/topic_tree.rs:210:                            if ui.small_button("✖").clicked() {
+src/ui/topic_tree.rs:357:                if response.clicked() {
+src/ui/topic_tree.rs:378:                    .clicked()
+src/ui/topic_tree.rs:449:                        if ui.small_button("💾 Save").clicked() {
+src/ui/topic_tree.rs:483:                    if ui.button(&button_text).clicked() {
+src/ui/topic_tree.rs:682:                if response.clicked() {
+src/ui/topic_tree.rs:717:                if exportable && ui.small_button("💾").on_hover_text("Save file").clicked() {
+src/ui/topic_tree.rs:784:                    if response.clicked() {

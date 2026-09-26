@@ -1,0 +1,31 @@
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    groups:
+      github-actions:
+        patterns: ["*"]
+
+  - package-ecosystem: cargo
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    open-pull-requests-limit: 5
+    groups:
+      cargo-minor-and-patch:
+        update-types: [minor, patch]
+    ignore:
+      # egui/eframe 0.29 → 0.3x and rfd 0.14 → 0.1x are real ports tracked
+      # in a later plan (deep review, "Deferred"). For 0.x crates a minor bump is breaking.
+      - dependency-name: egui
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
+      - dependency-name: eframe
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
+      - dependency-name: rfd
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]

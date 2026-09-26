@@ -1,0 +1,8 @@
+[package]
+name = "t10probe"
+version = "0.1.0"
+edition = "2021"
+[dependencies]
+epaint = "=0.29.1"
+[profile.release]
+debug = false

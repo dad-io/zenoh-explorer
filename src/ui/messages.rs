@@ -1,9 +1,89 @@
 //! Messages tab rendering.
 
+use std::collections::VecDeque;
+
 use egui::{Color32, RichText};
 
 use crate::app::ZenohExplorer;
 use crate::types::*;
+
+/// Rows rendered at most, newest first.
+const MAX_RENDERED_MESSAGES: usize = 500;
+
+/// Bytes of each payload the filter searches.
+const SEARCH_BYTES: usize = 4 * 1024;
+
+/// ASCII case-insensitive substring test that allocates nothing.
+/// `needle` must be non-empty.
+fn contains_ascii_ci(hay: &str, needle: &str) -> bool {
+    hay.as_bytes()
+        .windows(needle.len())
+        .any(|w| w.eq_ignore_ascii_case(needle.as_bytes()))
+}
+
+/// Returns the newest `max` rows matching `filter`, oldest first, and the
+/// total number of matching rows. A row matches when its key or the first
+/// 4 KiB of its payload contains the filter, ignoring case.
+pub(crate) fn filtered_tail<'a>(
+    messages: &'a VecDeque<ZenohMessage>,
+    filter: &str,
+    max: usize,
+) -> (Vec<&'a ZenohMessage>, usize) {
+    if filter.is_empty() {
+        let start = messages.len().saturating_sub(max);
+        return (messages.iter().skip(start).collect(), messages.len());
+    }
+    let lowered = filter.to_lowercase();
+    let ascii = lowered.is_ascii();
+    let matches = |message: &ZenohMessage| {
+        let end = safe_truncate_index(&message.payload, SEARCH_BYTES);
+        let payload = &message.payload[..end];
+        if ascii {
+            contains_ascii_ci(&message.key, &lowered) || contains_ascii_ci(payload, &lowered)
+        } else {
+            message.key.to_lowercase().contains(&lowered)
+                || payload.to_lowercase().contains(&lowered)
+        }
+    };
+    let mut shown = Vec::new();
+    let mut total = 0;
+    for message in messages.iter().rev() {
+        if matches(message) {
+            total += 1;
+            if shown.len() < max {
+                shown.push(message);
+            }
+        }
+    }
+    shown.reverse();
+    (shown, total)
+}
+
+/// Words the line that lists paused topics: sorted, at most three keys named.
+fn paused_note(keys: &[&str]) -> String {
+    let mut sorted = keys.to_vec();
+    sorted.sort_unstable();
+    let n = sorted.len();
+    if n == 1 {
+        return format!(
+            "New messages on 1 paused topic are not listed: {}",
+            sorted[0]
+        );
+    }
+    let mut note = format!(
+        "New messages on {n} paused topics are not listed: {}",
+        sorted
+            .iter()
+            .take(3)
+            .copied()
+            .collect::<Vec<_>>()
+            .join(", ")
+    );
+    if n > 3 {
+        note.push_str(&format!(", and {} more", n - 3));
+    }
+    note
+}
 
 /// Trait for messages tab rendering.
 pub trait MessagesUI {
@@ -24,10 +104,15 @@ impl MessagesUI for ZenohExplorer {
                 self.current_memory_bytes = 0;
                 self.messages_dropped = 0;
                 self.rate_limit_drops = 0;
+                self.messages_deduped = 0;
             }
 
             ui.separator();
-            ui.label(format!("Messages: {}", self.messages.len()));
+            ui.label(format!(
+                "In list: {} (limit {})",
+                self.messages.len(),
+                self.max_messages
+            ));
         });
 
         // Memory management controls
@@ -67,60 +152,134 @@ impl MessagesUI for ZenohExplorer {
             }
         });
 
+        if !self.paused_keys.is_empty() {
+            let keys: Vec<&str> = self.paused_keys.iter().map(String::as_str).collect();
+            let note = paused_note(&keys);
+            let mut resume = false;
+            ui.horizontal(|ui| {
+                ui.label(
+                    RichText::new(note)
+                        .color(self.text_secondary_color())
+                        .size(TEXT_SMALL_SIZE),
+                );
+                resume = ui.button("Resume all").clicked();
+            });
+            if resume {
+                self.paused_keys.clear();
+            }
+        }
+
+        let (shown, total) =
+            filtered_tail(&self.messages, &self.message_filter, MAX_RENDERED_MESSAGES);
+        if total > shown.len() {
+            let text = if self.message_filter.is_empty() {
+                format!("Showing the newest {} of {} rows", shown.len(), total)
+            } else {
+                format!(
+                    "Showing the newest {} of {} matching rows",
+                    shown.len(),
+                    total
+                )
+            };
+            ui.label(
+                RichText::new(text)
+                    .color(self.text_secondary_color())
+                    .size(TEXT_SMALL_SIZE),
+            );
+        }
+
+        let now = chrono::Utc::now();
         egui::ScrollArea::vertical()
+            .id_salt("all_messages")
             .auto_shrink([false; 2])
             .stick_to_bottom(self.auto_scroll)
             .show(ui, |ui| {
-                // Only render the last 500 messages to prevent UI lag with very large message counts
-                const MAX_RENDERED_MESSAGES: usize = 500;
-                let start_idx = self.messages.len().saturating_sub(MAX_RENDERED_MESSAGES);
+                for message in shown {
+                    ui.horizontal(|ui| {
+                        // Message type badge
+                        ui.label(
+                            RichText::new(message.message_type.label())
+                                .background_color(message.message_type.color())
+                                .color(Color32::WHITE)
+                                .size(TEXT_SMALL_SIZE),
+                        );
 
-                for message in self.messages.iter().skip(start_idx) {
-                    // OPTIMIZED: Only search first 4KB of payload to avoid O(n) on large payloads
-                    let search_end = safe_truncate_index(&message.payload, MAX_HASH_BYTES);
-                    let payload_search_slice = &message.payload[..search_end];
-                    if self.message_filter.is_empty()
-                        || message.key.contains(&self.message_filter)
-                        || payload_search_slice.contains(&self.message_filter)
-                    {
-                        ui.horizontal(|ui| {
-                            // Message type badge
-                            ui.label(
-                                RichText::new(message.message_type.label())
-                                    .background_color(message.message_type.color())
-                                    .color(Color32::WHITE)
-                                    .size(TEXT_SMALL_SIZE),
-                            );
+                        // Timestamp, local time
+                        ui.label(
+                            RichText::new(format_local_time(&message.timestamp, &now))
+                                .color(self.text_secondary_color())
+                                .size(TEXT_SMALL_SIZE),
+                        );
 
-                            // Timestamp
-                            ui.label(
-                                RichText::new(message.timestamp.format("%H:%M:%S%.3f").to_string())
-                                    .color(self.text_secondary_color())
-                                    .size(TEXT_SMALL_SIZE),
-                            );
+                        // Key
+                        ui.label(RichText::new(&message.key).strong());
+                    });
 
-                            // Key
-                            ui.label(RichText::new(&message.key).strong());
-                        });
-
-                        // Payload (truncated)
-                        if !message.payload.is_empty() {
-                            let display_payload = if message.payload.len() > 200 {
-                                let end = safe_truncate_index(&message.payload, 200);
-                                format!("{}...", &message.payload[..end])
-                            } else {
-                                message.payload.clone()
-                            };
-                            ui.label(
-                                RichText::new(display_payload)
-                                    .color(self.text_secondary_color())
-                                    .size(TEXT_SMALL_SIZE),
-                            );
-                        }
-
-                        ui.separator();
+                    // Payload (truncated)
+                    if !message.payload.is_empty() {
+                        let display_payload = if message.payload.len() > 200 {
+                            let end = safe_truncate_index(&message.payload, 200);
+                            format!("{}...", &message.payload[..end])
+                        } else {
+                            message.payload.clone()
+                        };
+                        ui.label(
+                            RichText::new(display_payload)
+                                .color(self.text_secondary_color())
+                                .size(TEXT_SMALL_SIZE),
+                        );
                     }
+
+                    ui.separator();
                 }
             });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::VecDeque;
+
+    fn m(key: &str) -> ZenohMessage {
+        ZenohMessage::new_with_bytes(
+            key.into(),
+            "p".into(),
+            vec![],
+            "text/plain".into(),
+            chrono::Utc::now(),
+            MessageType::Subscribe,
+            false,
+            MessageSource::MonitorSession,
+        )
+    }
+
+    #[test]
+    fn filter_searches_whole_list_case_insensitively() {
+        let mut list: VecDeque<ZenohMessage> = VecDeque::new();
+        list.push_back(m("Old/Match"));
+        for i in 0..600 {
+            list.push_back(m(&format!("noise/{i}")));
+        }
+        let (shown, total) = filtered_tail(&list, "old/match", 500);
+        assert_eq!(
+            (shown.len(), total),
+            (1, 1),
+            "a match older than the newest 500 rows is still found"
+        );
+        let (shown, total) = filtered_tail(&list, "", 500);
+        assert_eq!((shown.len(), total), (500, 601));
+    }
+
+    #[test]
+    fn paused_note_is_singular_at_one_and_bounded() {
+        assert_eq!(
+            paused_note(&["a/x"]),
+            "New messages on 1 paused topic are not listed: a/x"
+        );
+        assert_eq!(
+            paused_note(&["e", "c", "a", "d", "b"]),
+            "New messages on 5 paused topics are not listed: a, b, c, and 2 more"
+        );
     }
 }

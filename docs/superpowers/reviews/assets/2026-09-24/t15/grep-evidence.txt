@@ -1,0 +1,274 @@
+# T15 grep evidence, HEAD 6a52865, 2026-09-25T15:17:39Z
+# git diff --stat -- src Cargo.toml .github assets (must be empty):
+
+## Key validation anywhere in src (keyexpr::new / KeyExpr::try_from / is_valid / trim)
+src/zenoh_worker.rs:945:    let first_locator = locators.split(',').next().unwrap_or("").trim();
+src/zenoh_worker.rs:1073:            .map(|s| s.trim().to_string())
+src/zenoh_worker.rs:1169:    let first_locator = locators.split(',').next().unwrap_or("").trim();
+src/zenoh_worker.rs:1217:            .map(|s| s.trim().to_string())
+src/ui/publish.rs:71:                                            hex.trim(),
+src/ui/publish.rs:165:                                    hex.trim(),
+src/transfer.rs:227:        if !name.trim().is_empty() {
+
+## publish.rs: every user-visible string
+23:                "⚠ Not connected. Please connect first.",
+28:            ui.label("Publish Data");
+30:                ui.label("Key:");
+36:                ui.label("Payload:");
+37:                if ui.button("Import File").clicked() {
+55:                                            "{}... [+{} bytes]",
+66:                                        .map(|b| format!("{:02x} ", b))
+70:                                            "{}... [+{} bytes, {} total]",
+82:                                self.publish_encoding = "application/octet-stream".to_string();
+85:                                self.publish_payload = format!("Error reading file: {}", e);
+94:                if self.publish_payload_bytes.is_some() && ui.button("✖ Clear").clicked() {
+99:                    self.publish_payload = "Hello Zenoh!".to_string();
+100:                    self.publish_encoding = "text/plain".to_string();
+115:                            RichText::new(format!("({} bytes)", len))
+122:                                "▼ Collapse"
+124:                                "▶ Expand"
+149:                                    "{}... [+{} bytes]",
+160:                                .map(|b| format!("{:02x} ", b))
+164:                                    "{}... [+{} bytes, {} total]",
+204:                ui.label("Encoding:");
+209:            let button = egui::Button::new("Publish");
+230:                        "GUI: About to send Publish command for {} bytes",
+242:                            "GUI: Publish command sent successfully for {} bytes",
+261:            ui.label(RichText::new("Queryable").strong());
+263:                RichText::new("Respond to queries for locally published keys")
+269:                ui.label("Key Pattern:");
+275:                ui.checkbox(&mut self.queryable_enabled, "Enable Queryable");
+280:                        RichText::new("Active")
+290:                        RichText::new("Inactive")
+312:                    "When enabled, this app will respond to queries for keys you've published",
+
+## publish.rs: enable condition, send, and post-send clearing
+208	            // Publish button - only enabled when connected
+209	            let button = egui::Button::new("Publish");
+210	            if ui
+211	                .add_enabled(
+212	                    matches!(self.connection_status, ConnectionStatus::Connected)
+213	                        && !self.publish_key.is_empty(),
+214	                    button,
+215	                )
+216	                .clicked()
+217	            {
+218	                if let Some(sender) = &self.command_sender {
+219	                    // Track if this is from file import before taking the bytes
+220	                    let from_import = self.publish_payload_bytes.is_some();
+221	
+222	                    // Use raw bytes if imported (take to avoid clone), otherwise convert text to bytes
+223	                    let payload_bytes = self
+224	                        .publish_payload_bytes
+225	                        .take()
+226	                        .unwrap_or_else(|| self.publish_payload.as_bytes().to_vec());
+227	
+228	                    let payload_len = payload_bytes.len();
+229	                    info!(
+230	                        "GUI: About to send Publish command for {} bytes",
+231	                        payload_len
+232	                    );
+233	
+234	                    match sender.send(ZenohCommand::Publish {
+235	                        key: self.publish_key.clone(),
+236	                        payload: payload_bytes,
+237	                        encoding: self.publish_encoding.clone(),
+238	                        from_import, // Don't store imported files after publish
+239	                        filename: self.publish_payload_filename.clone(),
+240	                    }) {
+241	                        Ok(_) => info!(
+242	                            "GUI: Publish command sent successfully for {} bytes",
+243	                            payload_len
+244	                        ),
+245	                        Err(e) => error!("GUI: Failed to send Publish command: {:?}", e),
+246	                    }
+247	
+248	                    // Clear the UI state since we moved the bytes
+249	                    self.publish_payload_filename = None;
+250	                    self.publish_payload = String::new();
+251	                    self.publish_payload_expanded = false;
+252	                    self.import_memory_bytes = 0; // Memory freed after publish
+253	                }
+254	            }
+
+## zenoh_worker.rs Publish arm: all outcomes (log only)
+521:                                info!(
+548:                                        Ok(_) => info!(
+556:                                            error!(
+570:                                    info!(
+585:                                    Ok(_) => info!(
+589:                                    Err(e) => error!("Failed to publish to {}: {}", key, e),
+602:                                    Ok(_) => info!(
+606:                                    Err(e) => error!("Failed to publish to {}: {}", key, e),
+618:                                    Ok(_) => info!("Published {} bytes to {}", payload_len, key),
+619:                                    Err(e) => error!("Failed to publish to {}: {}", key, e),
+635:                                let _ = event_sender.send(ZenohEvent::MessageReceived(message));
+
+## kvstore write happens before put, stores the 256-byte preview string
+460	                        if let Some(ref sess) = publishing_session {
+461	                            // Generate display string - only preview, never clone full payload
+462	                            let payload_str = {
+463	                                let preview_len = payload.len().min(256);
+464	                                match std::str::from_utf8(&payload[..preview_len]) {
+465	                                    Ok(text) if payload.len() <= 256 => text.to_string(),
+466	                                    Ok(text) => format!(
+467	                                        "{}... [+{} bytes]",
+468	                                        text,
+469	                                        payload.len() - preview_len
+470	                                    ),
+471	                                    Err(_) => {
+472	                                        // Binary - show hex preview
+473	                                        let hex: Vec<String> = payload[..preview_len]
+474	                                            .iter()
+475	                                            .map(|b| format!("{:02x}", b))
+476	                                            .collect();
+477	                                        if payload.len() > 256 {
+478	                                            format!(
+479	                                                "[binary {} bytes] {}...",
+480	                                                payload.len(),
+481	                                                hex.join(" ")
+482	                                            )
+483	                                        } else {
+484	                                            format!(
+485	                                                "[binary {} bytes] {}",
+486	                                                payload.len(),
+487	                                                hex.join(" ")
+488	                                            )
+489	                                        }
+490	                                    }
+491	                                }
+492	                            };
+493	
+494	                            // Store in local kvstore for queryable responses (only store small payloads)
+495	                            // Skip storage for imported files - they are ephemeral and shouldn't persist in memory
+496	                            if !from_import && payload.len() <= 10 * 1024 * 1024 {
+497	                                // 10MB limit for kvstore
+498	                                if let Ok(mut store) = local_kvstore.write() {
+499	                                    store.insert(
+500	                                        key.clone(),
+501	                                        (payload_str.clone(), encoding.clone()),
+502	                                    );
+503	                                }
+504	                            }
+
+## ZenohEvent variants (no publish result/failure variant)
+318	    },
+319	    ConnectionError(String),
+320	    MessageReceived(ZenohMessage),
+321	    /// Batch messages for efficient UI updates
+322	    MessageBatch(Vec<ZenohMessage>),
+323	    SubscriptionCreated {
+324	        id: String,
+325	        key_expr: String,
+326	    },
+327	    SubscriptionRemoved {
+328	        id: String,
+329	    },
+330	    QueryNoResponses {
+331	        selector: String,
+332	    },
+333	    /// Health check pong response
+334	    Pong,
+335	    /// Publishing session connected (first phase of dual-session connection)
+336	    PublishingConnected,
+337	    /// Monitor session connected (second phase of dual-session connection)
+338	    MonitorConnected,
+339	}
+340	
+341	/// Types of messages that can flow through the Zenoh network.
+342	/// Each type has associated colors and labels for UI display.
+343	#[derive(Debug, Clone, PartialEq)]
+344	pub enum MessageType {
+345	    Subscribe,
+
+## insert_path drops empty segments (so demo//x and demo/x/ land on demo/x)
+    pub fn insert_path(&mut self, key: &str) -> &mut ZenohNode {
+        let parts: Vec<&str> = key.split('/').filter(|p| !p.is_empty()).collect();
+
+
+## import memory counts toward the header percentage and the >80% alert
+                        // Memory usage indicator
+                        let total_memory_bytes =
+                            self.current_memory_bytes + self.import_memory_bytes;
+                        if !self.messages.is_empty()
+                            || self.messages_dropped > 0
+                            || self.import_memory_bytes > 0
+                        {
+                            ui.separator();
+
+                            let memory_mb = total_memory_bytes as f32 / (1024.0 * 1024.0);
+                            let memory_percent =
+                                (memory_mb / self.max_memory_mb as f32 * 100.0).min(100.0);
+
+                            if memory_percent > 80.0 && !self.memory_warning_shown {
+                                self.memory_warning_shown = true;
+                                self.query_alert = Some("⚠ Memory usage is high (>80%). Messages may start being dropped soon.".to_string());
+                            } else if memory_percent < 70.0 {
+                                self.memory_warning_shown = false;
+                            }
+
+## queryable enable/disable: sent only on checkbox change; worker ignores without a session
+                // Send command if state changed
+                if was_enabled != self.queryable_enabled {
+                    if let Some(sender) = &self.command_sender {
+                        if self.queryable_enabled {
+                            let _ = sender.send(ZenohCommand::EnableQueryable {
+                                key_expr: self.queryable_pattern.clone(),
+                            });
+                        } else {
+                            let _ = sender.send(ZenohCommand::DisableQueryable);
+                        }
+                    }
+                }
+                    ZenohCommand::EnableQueryable { key_expr } => {
+                        if let Some(ref sess) = publishing_session {
+
+## Disconnect arm does not touch queryable_task
+(no queryable reference in Disconnect arm 313-345)
+
+## Enter / lost_focus handling in ui (F-T19-4)
+(none)
+
+## hint_text anywhere
+(none)
+
+## help.rs claim
+33:            "3. Use Publish tab to send data. Enter text or import files of any size or type.",
+
+# ---- Added 2026-09-25 for the coordinator's review fixes ----
+
+## events.rs:244-247 (tree leaf from insert_path) and :293-298 (payload_store keyed by the raw message.key)
+244	
+245	        if let Ok(mut tree) = self.browse_tree.write() {
+246	            let current_node = tree.insert_path(&message.key);
+247	
+293	        if payload_len <= MAX_EXPORT_PAYLOAD {
+294	            if let Ok(mut store) = self.payload_store.write() {
+295	                crate::transfer::insert_payload(
+296	                    &mut store,
+297	                    message.key.clone(),
+298	                    PayloadEntry {
+
+## zenoh_worker.rs:96 and :877 (queryable_task handle) vs the Disconnect arm :313-345
+    let mut queryable_task: Option<(tokio::task::JoinHandle<()>, tokio::sync::mpsc::Sender<()>)> =
+        None;
+                            queryable_task = Some((handle, cancel_tx));
+queryable_task references in 313-345: 0
+
+## zenoh_worker.rs:862-865 (task ends when the channel closes)
+                                                        Err(_) => {
+                                                            error!("Error receiving query");
+                                                            break;
+                                                        }
+
+## zenoh_worker.rs:510-516 (the push-failure comment and the chunk constants)
+                            // Zenoh's Put codec uses Zenoh080Bounded::<u32> for payload size encoding,
+                            // which limits payloads to u32::MAX (~4GB). For payloads >= 4GB,
+                            // we must chunk them at the application level.
+                            // Using 64MB chunks to avoid overwhelming zenoh's transport queue.
+                            // Larger chunks cause "Unable to push non droppable network message" errors.
+                            const CHUNK_SIZE: usize = 64 * 1024 * 1024; // 64MB chunks
+                            const MAX_SINGLE_PAYLOAD: usize = 0xFFFF_FFFF; // u32::MAX (~4GB)
+
+## git diff --stat -- src Cargo.toml .github assets (re-check):
+(end)

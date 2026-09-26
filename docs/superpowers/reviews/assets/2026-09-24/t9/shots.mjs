@@ -1,0 +1,25 @@
+// node shots.mjs <outdir> <reduced?0|1>  — poll clipped 2x screenshots across a nav response
+import fs from 'node:fs';
+const [,, out, red] = process.argv;
+const tgt = await (await fetch('http://127.0.0.1:9333/json/new?about:blank',{method:'PUT'})).json();
+const ws = new WebSocket(tgt.webSocketDebuggerUrl); let id=0; const pend=new Map();
+ws.onmessage=e=>{const m=JSON.parse(e.data); if(m.id&&pend.has(m.id)){pend.get(m.id)(m);pend.delete(m.id);}};
+await new Promise(r=>ws.onopen=r);
+const send=(method,params={})=>new Promise(r=>{const i=++id;pend.set(i,r);ws.send(JSON.stringify({id:i,method,params}));});
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+const ev=async js=>(await send('Runtime.evaluate',{expression:js,returnByValue:true})).result?.result?.value;
+await send('Page.enable'); await send('Emulation.setDeviceMetricsOverride',{width:1440,height:900,deviceScaleFactor:2,mobile:false});
+if(red==='1') await send('Emulation.setEmulatedMedia',{features:[{name:'prefers-reduced-motion',value:'reduce'}]});
+const RATE=Number(process.env.RATE||1); await send('Animation.enable'); await send('Animation.setPlaybackRate',{playbackRate:RATE});
+await send('Page.navigate',{url:'http://127.0.0.1:8761/'}); await sleep(3000);
+const p=JSON.parse(await ev(`(()=>{const el=[...document.querySelectorAll('nav a')].find(a=>a.innerText.includes('Arena'));const r=el.getBoundingClientRect();return JSON.stringify({x:r.x+r.width/2,y:r.y+r.height/2})})()`));
+const clip={x:16,y:96,width:280,height:240,scale:2};
+fs.mkdirSync(out,{recursive:true});
+const shot=async (label)=>{const t=Date.now(); const r=await send('Page.captureScreenshot',{format:'png',clip,captureBeyondViewport:false}); return {t,label,d:r.result.data};};
+const frames=[await shot('before')];
+const t0=Date.now();
+for(const type of ['mousePressed','mouseReleased']) await send('Input.dispatchMouseEvent',{type,x:p.x,y:p.y,button:'left',clickCount:1});
+while(Date.now()-t0<1400/RATE) frames.push(await shot(''));
+frames.forEach((f,i)=>fs.writeFileSync(`${out}/s${String(i).padStart(3,'0')}_${Math.round((f.t-t0)*RATE)}ms.png`,Buffer.from(f.d,'base64')));
+console.log('frames',frames.length, frames.map(f=>Math.round((f.t-t0)*RATE)).join(' '));
+await fetch(`http://127.0.0.1:9333/json/close/${tgt.id}`); process.exit(0);

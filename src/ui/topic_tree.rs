@@ -1,8 +1,10 @@
 //! Topic tree panel and detail view rendering.
 
 use egui::RichText;
+use std::sync::Arc;
+use std::time::Instant;
 
-use crate::app::ZenohExplorer;
+use crate::app::{UiAlert, ZenohExplorer};
 use crate::colors::ExplorerColors;
 use crate::transfer;
 use crate::types::*;
@@ -19,9 +21,9 @@ fn leader_line_with_count(
     line: Option<bool>,
     count: usize,
     text_color: egui::Color32,
-) {
+) -> Option<egui::Response> {
     if count == 0 {
-        return;
+        return None;
     }
     let count_text = count.to_string();
     let font = egui::FontId::proportional(TEXT_SMALL_SIZE);
@@ -57,11 +59,13 @@ fn leader_line_with_count(
             }
         }
     }
-    ui.label(
-        egui::RichText::new(count_text)
-            .size(TEXT_SMALL_SIZE)
-            .color(text_color),
-    );
+    Some(
+        ui.label(
+            egui::RichText::new(count_text)
+                .size(TEXT_SMALL_SIZE)
+                .color(text_color),
+        ),
+    )
 }
 
 /// Custom expander: two intersecting pipes. Collapsed shows ＋ (vertical pipe
@@ -181,15 +185,12 @@ impl TopicTreeUI for ZenohExplorer {
                     ui.label("Key:");
                     ui.text_edit_singleline(&mut self.subscribe_key);
                 });
+                let key_err = crate::validation::key_expr_error(&self.subscribe_key);
+                if let Some(err) = &key_err {
+                    ui.colored_label(ExplorerColors::ERROR, err);
+                }
                 let button = egui::Button::new("Subscribe");
-                if ui
-                    .add_enabled(
-                        matches!(self.connection_status, ConnectionStatus::Connected)
-                            && !self.subscribe_key.is_empty(),
-                        button,
-                    )
-                    .clicked()
-                {
+                if ui.add_enabled(self.subscribe_enabled(), button).clicked() {
                     if let Some(sender) = &self.command_sender {
                         let _ = sender.send(ZenohCommand::Subscribe {
                             key_expr: self.subscribe_key.clone(),
@@ -197,6 +198,8 @@ impl TopicTreeUI for ZenohExplorer {
                             mode: self.subscribe_mode.clone(),
                         });
                     }
+                    self.pending_subscribes
+                        .insert(self.subscribe_key.trim().to_string());
                 }
 
                 // Active subscriptions
@@ -224,23 +227,47 @@ impl TopicTreeUI for ZenohExplorer {
             // Topic tree
             ui.label(RichText::new("Topics").strong());
 
-            // Clone tree for rendering (necessary to avoid lifetime issues with RwLock)
-            let tree_clone = if let Ok(tree) = self.browse_tree.read() {
-                tree.clone()
-            } else {
-                ZenohNode::new("root".to_string())
+            // Render from a read guard on a local Arc clone: no per-frame deep copy,
+            // and `self` stays free for &mut calls. The UI thread is the only
+            // writer (events run on it), so nested read() calls cannot deadlock.
+            let tree_arc = Arc::clone(&self.browse_tree);
+            let guard = tree_arc.read();
+            let fallback;
+            let tree: &ZenohNode = match &guard {
+                Ok(g) => g,
+                Err(_) => {
+                    fallback = ZenohNode::new("root".to_string());
+                    &fallback
+                }
             };
 
             let filter_lower = self.tree_filter.to_lowercase();
             if !filter_lower.is_empty() {
-                let stale = self
-                    .tree_filter_cache
-                    .as_ref()
-                    .is_none_or(|(q, v, _)| *q != filter_lower || *v != self.tree_version);
-                if stale {
-                    let visible = compute_visible_paths(&tree_clone, &filter_lower);
+                let now = Instant::now();
+                if filter_cache_is_stale(
+                    self.tree_filter_cache
+                        .as_ref()
+                        .map(|(q, v, at, _)| (q.as_str(), *v, *at)),
+                    &filter_lower,
+                    self.tree_version,
+                    now,
+                ) {
+                    let visible = compute_visible_paths(tree, &filter_lower);
                     self.tree_filter_cache =
-                        Some((filter_lower.clone(), self.tree_version, visible));
+                        Some((filter_lower.clone(), self.tree_version, now, visible));
+                }
+                // K4: a cache kept only by the throttle repaints when the
+                // interval ends, so the filtered tree is not stale until the
+                // idle tick after traffic stops.
+                if let Some(d) = filter_repaint_after(
+                    self.tree_filter_cache
+                        .as_ref()
+                        .map(|(q, v, at, _)| (q.as_str(), *v, *at)),
+                    &filter_lower,
+                    self.tree_version,
+                    now,
+                ) {
+                    ui.ctx().request_repaint_after(d);
                 }
             } else {
                 self.tree_filter_cache = None;
@@ -249,7 +276,7 @@ impl TopicTreeUI for ZenohExplorer {
             egui::ScrollArea::vertical()
                 .auto_shrink([false; 2])
                 .show(ui, |ui| {
-                    if tree_clone.children.is_empty() {
+                    if tree.children.is_empty() {
                         ui.vertical_centered(|ui| {
                             ui.add_space(32.0);
                             ui.label(
@@ -259,28 +286,28 @@ impl TopicTreeUI for ZenohExplorer {
                             );
                             ui.add_space(8.0);
                             ui.label(
-                                RichText::new(
-                                    "Subscribe to key expressions to see network activity",
-                                )
-                                .italics()
-                                .color(self.text_secondary_color()),
+                                RichText::new("Topics appear here as this app receives data")
+                                    .italics()
+                                    .color(self.text_secondary_color()),
                             );
                             ui.add_space(4.0);
                             ui.label(
-                                RichText::new("💡 Try demo/** or sensor/* in the Subscribe tab")
-                                    .size(TEXT_SMALL_SIZE)
-                                    .color(self.text_tertiary_color()),
+                                RichText::new(
+                                    "💡 Try demo/** or sensor/* in Subscribe to Topics above",
+                                )
+                                .size(TEXT_SMALL_SIZE)
+                                .color(self.text_tertiary_color()),
                             );
                             ui.add_space(32.0);
                         });
                     } else {
-                        for child in tree_clone.children.values() {
+                        for child in tree.children.values() {
                             self.show_tree_node(ui, child, String::new(), 0);
                         }
                         if self
                             .tree_filter_cache
                             .as_ref()
-                            .is_some_and(|(_, _, v)| v.is_empty())
+                            .is_some_and(|(_, _, _, v)| v.is_empty())
                         {
                             ui.vertical_centered(|ui| {
                                 ui.add_space(16.0);
@@ -310,6 +337,41 @@ impl TopicTreeUI for ZenohExplorer {
     fn show_topic_details(&mut self, ui: &mut egui::Ui) {
         if let Some(ref topic) = self.selected_topic.clone() {
             ui.heading(topic);
+
+            // Get the node details (extract data first to avoid borrow conflicts)
+            let (message_count, payload_opt, encoding_opt, kind, source_time, summary, child_keys) =
+                match self
+                    .browse_tree
+                    .read()
+                    .ok()
+                    .as_deref()
+                    .and_then(|tree| self.find_node(tree, topic))
+                {
+                    Some(node) => (
+                        node.message_count,
+                        node.last_payload.clone(),
+                        node.last_encoding.clone(),
+                        node.last_kind,
+                        node.last_source_time,
+                        (!node.children.is_empty()).then(|| node.subtree_summary()),
+                        node.children.keys().cloned().collect::<Vec<_>>(),
+                    ),
+                    None => (0, None, None, SampleKindView::Put, None, None, Vec::new()),
+                };
+            let now = Instant::now();
+
+            // A branch with no data of its own: summary and child keys only.
+            if let (Some(summary), 0) = (summary, message_count) {
+                ui.separator();
+                ui.label(branch_summary_text(&summary, now));
+                ui.separator();
+                for child in &child_keys {
+                    if ui.selectable_label(false, child).clicked() {
+                        self.selected_topic = Some(format!("{}/{}", topic, child));
+                    }
+                }
+                return;
+            }
 
             // Action buttons: Save and Pause/Resume
             ui.horizontal(|ui| {
@@ -361,7 +423,11 @@ impl TopicTreeUI for ZenohExplorer {
 
                 // Pause/Resume button with animated indicator
                 let is_paused = self.paused_keys.contains(topic);
-                let button_text = if is_paused { "▶ Resume" } else { "⏸ Pause" };
+                let button_text = if is_paused {
+                    "▶ Resume list"
+                } else {
+                    "⏸ Pause list"
+                };
                 let button_color = if is_paused {
                     ExplorerColors::WARNING
                 } else {
@@ -370,11 +436,9 @@ impl TopicTreeUI for ZenohExplorer {
 
                 if ui
                     .button(RichText::new(button_text).color(button_color))
-                    .on_hover_text(if is_paused {
-                        "Resume updates for this topic"
-                    } else {
-                        "Pause updates for this topic (messages still received, just not displayed)"
-                    })
+                    .on_hover_text(
+                        "Stop adding this topic's messages to the lists; its value and count keep updating",
+                    )
                     .clicked()
                 {
                     if is_paused {
@@ -387,7 +451,7 @@ impl TopicTreeUI for ZenohExplorer {
                 // Show paused indicator with subtle animation
                 if is_paused {
                     ui.label(
-                        RichText::new("⏸ Paused")
+                        RichText::new("Paused (lists only)")
                             .color(ExplorerColors::WARNING)
                             .size(TEXT_SMALL_SIZE),
                     );
@@ -396,27 +460,17 @@ impl TopicTreeUI for ZenohExplorer {
 
             ui.separator();
 
-            // Get the node details (extract data first to avoid borrow conflicts)
-            let (message_count, payload_opt, encoding_opt) =
-                if let Ok(tree) = self.browse_tree.read() {
-                    if let Some(node) = self.find_node(&tree, topic) {
-                        (
-                            node.message_count,
-                            node.last_payload.clone(),
-                            node.last_encoding.clone(),
-                        )
-                    } else {
-                        (0, None, None)
-                    }
-                } else {
-                    (0, None, None)
-                };
-
-            // Show node metadata
-            ui.horizontal(|ui| {
-                ui.label(RichText::new("Messages:").strong());
-                ui.label(message_count.to_string());
-            });
+            // Show node metadata. The tree lives for the whole app run and
+            // survives Disconnect, so the count spans connects.
+            ui.label(
+                RichText::new(format!("Received: {message_count} (since app start)")).strong(),
+            );
+            if let Some(summary) = &summary {
+                ui.label(
+                    RichText::new(branch_summary_text(summary, now))
+                        .color(self.text_secondary_color()),
+                );
+            }
 
             // Check for chunked payload and show info
             let chunk_info = self
@@ -525,74 +579,133 @@ impl TopicTreeUI for ZenohExplorer {
                         ui.label(encoding);
                     });
                 }
+                if kind == SampleKindView::Delete {
+                    ui.separator();
+                    ui.label(RichText::new("Last sample: DELETE").strong());
+                }
+                if let Some(ts) = source_time {
+                    ui.separator();
+                    ui.horizontal(|ui| {
+                        ui.label(RichText::new("Source time:").strong());
+                        ui.label(format_local_time(&ts, &chrono::Utc::now()));
+                    });
+                }
             }
 
             ui.separator();
 
             // Show message history for this topic
             ui.label(RichText::new("Message History:").strong());
-            egui::ScrollArea::vertical().show(ui, |ui| {
-                let topic_messages: Vec<_> = self
-                    .messages
-                    .iter()
-                    .filter(|m| m.key == *topic)
-                    .rev()
-                    .take(50)
-                    .collect();
+            let paused = self.paused_keys.contains(topic);
+            egui::ScrollArea::vertical()
+                .id_salt(("history", topic.as_str()))
+                .show(ui, |ui| {
+                    const HISTORY_SCAN_LIMIT: usize = 20_000;
+                    let topic_messages: Vec<_> = self
+                        .messages
+                        .iter()
+                        .rev()
+                        .take(HISTORY_SCAN_LIMIT)
+                        // Query replies belong to Query Results, not History (G3-12).
+                        .filter(|m| m.key == *topic && m.message_type != MessageType::QueryReply)
+                        .take(50)
+                        .collect();
+                    let scan_note = history_scan_note(
+                        self.messages.len(),
+                        HISTORY_SCAN_LIMIT,
+                        topic_messages.len(),
+                    );
 
-                if topic_messages.is_empty() {
-                    ui.vertical_centered(|ui| {
-                        ui.add_space(16.0);
-                        ui.label(
-                            RichText::new("No messages yet")
-                                .size(HEADING_MEDIUM_SIZE)
-                                .color(self.text_tertiary_color()),
-                        );
-                        ui.add_space(4.0);
-                        ui.label(
-                            RichText::new("Waiting for messages on this topic...")
-                                .italics()
-                                .size(TEXT_SMALL_SIZE)
-                                .color(self.text_secondary_color()),
-                        );
-                        ui.add_space(16.0);
-                    });
-                } else {
-                    for message in topic_messages {
-                        ui.group(|ui| {
-                            ui.horizontal(|ui| {
+                    if topic_messages.is_empty() {
+                        let (heading, detail) = match &scan_note {
+                            Some(note) => ("No messages in the scanned rows", Some(note.as_str())),
+                            None => (history_empty_reason(message_count, paused), None),
+                        };
+                        ui.vertical_centered(|ui| {
+                            ui.add_space(16.0);
+                            ui.label(
+                                RichText::new(heading)
+                                    .size(HEADING_MEDIUM_SIZE)
+                                    .color(self.text_tertiary_color()),
+                            );
+                            if let Some(detail) = detail {
+                                ui.add_space(4.0);
                                 ui.label(
-                                    RichText::new(
-                                        message.timestamp.format("%H:%M:%S%.3f").to_string(),
-                                    )
-                                    .color(self.text_secondary_color())
-                                    .size(TEXT_SMALL_SIZE),
-                                );
-                                ui.label(
-                                    RichText::new(message.message_type.label())
-                                        .background_color(message.message_type.color())
-                                        .color(egui::Color32::WHITE)
-                                        .size(TEXT_SMALL_SIZE),
-                                );
-                            });
-
-                            if !message.payload.is_empty() {
-                                let display_payload = if message.payload.len() > 200 {
-                                    let end = safe_truncate_index(&message.payload, 200);
-                                    format!("{}...", &message.payload[..end])
-                                } else {
-                                    message.payload.clone()
-                                };
-                                ui.label(
-                                    RichText::new(display_payload)
-                                        .color(self.text_secondary_color())
-                                        .size(TEXT_SMALL_SIZE),
+                                    RichText::new(detail)
+                                        .italics()
+                                        .size(TEXT_SMALL_SIZE)
+                                        .color(self.text_secondary_color()),
                                 );
                             }
+                            ui.add_space(16.0);
                         });
+                    } else {
+                        let shown = topic_messages.len();
+                        if message_count > shown {
+                            ui.label(
+                                RichText::new(format!(
+                                    "Showing the newest {shown} of {message_count}"
+                                ))
+                                .size(TEXT_SMALL_SIZE)
+                                .color(self.text_secondary_color()),
+                            );
+                        }
+                        if let Some(note) = scan_note {
+                            ui.label(
+                                RichText::new(note)
+                                    .italics()
+                                    .size(TEXT_SMALL_SIZE)
+                                    .color(self.text_secondary_color()),
+                            );
+                        }
+                        let wall_now = chrono::Utc::now();
+                        for message in topic_messages {
+                            ui.group(|ui| {
+                                ui.horizontal(|ui| {
+                                    ui.label(
+                                        RichText::new(format_local_time(
+                                            &message.timestamp,
+                                            &wall_now,
+                                        ))
+                                        .color(self.text_secondary_color())
+                                        .size(TEXT_SMALL_SIZE),
+                                    )
+                                    .on_hover_text("Received time, local");
+                                    if let Some(src) = &message.source_timestamp {
+                                        ui.label(
+                                            RichText::new(format!(
+                                                "· source {}",
+                                                format_local_time(src, &wall_now)
+                                            ))
+                                            .color(self.text_secondary_color())
+                                            .size(TEXT_SMALL_SIZE),
+                                        );
+                                    }
+                                    ui.label(
+                                        RichText::new(message.message_type.label())
+                                            .background_color(message.message_type.color())
+                                            .color(egui::Color32::WHITE)
+                                            .size(TEXT_SMALL_SIZE),
+                                    );
+                                });
+
+                                if !message.payload.is_empty() {
+                                    let display_payload = if message.payload.len() > 200 {
+                                        let end = safe_truncate_index(&message.payload, 200);
+                                        format!("{}...", &message.payload[..end])
+                                    } else {
+                                        message.payload.clone()
+                                    };
+                                    ui.label(
+                                        RichText::new(display_payload)
+                                            .color(self.text_secondary_color())
+                                            .size(TEXT_SMALL_SIZE),
+                                    );
+                                }
+                            });
+                        }
                     }
-                }
-            });
+                });
         } else {
             // No topic selected - show all messages
             ui.heading("All Messages");
@@ -635,7 +748,7 @@ impl TopicTreeUI for ZenohExplorer {
 
         // Apply filter via the precomputed visible-path set (deep match:
         // ancestors of matches and subtrees of matching branches stay visible)
-        if let Some((_, _, visible)) = &self.tree_filter_cache {
+        if let Some((_, _, _, visible)) = &self.tree_filter_cache {
             if !visible.contains(&full_path) {
                 return;
             }
@@ -683,6 +796,9 @@ impl TopicTreeUI for ZenohExplorer {
                     self.selected_topic = Some(full_path.clone());
                     self.detail_view = DetailView::TopicDetails;
                 }
+                if self.paused_keys.contains(&full_path) {
+                    ui.label(RichText::new("⏸ paused").size(TEXT_SMALL_SIZE));
+                }
 
                 if let Some(t) = &node.transfer {
                     let dark_mode = self.dark_mode;
@@ -719,7 +835,11 @@ impl TopicTreeUI for ZenohExplorer {
                 }
 
                 // Show message count with leader line (always dashed/collapsed-style for leaves)
-                leader_line_with_count(ui, None, node.message_count, self.text_tertiary_color());
+                if let Some(r) =
+                    leader_line_with_count(ui, None, node.message_count, self.text_tertiary_color())
+                {
+                    r.on_hover_text(count_hover(false, node.message_count));
+                }
             });
         } else {
             // Branch node - collapsible with consistent spacing
@@ -785,6 +905,17 @@ impl TopicTreeUI for ZenohExplorer {
                         self.selected_topic = Some(full_path.clone());
                         self.detail_view = DetailView::TopicDetails;
                     }
+                    // A branch that also carries data shows its own count.
+                    if node.message_count > 0 {
+                        ui.label(
+                            RichText::new(format!("({})", node.message_count))
+                                .size(TEXT_SMALL_SIZE)
+                                .color(secondary_color),
+                        );
+                    }
+                    if self.paused_keys.contains(&full_path) {
+                        ui.label(RichText::new("⏸ paused").size(TEXT_SMALL_SIZE));
+                    }
 
                     // Show transfer progress inline if this branch-topic is receiving chunks
                     if let Some(ref t) = transfer_snapshot {
@@ -792,7 +923,11 @@ impl TopicTreeUI for ZenohExplorer {
                     }
 
                     // Show descendant leaf count with leader line
-                    leader_line_with_count(ui, Some(expanded), cumulative_leaves, tertiary);
+                    if let Some(r) =
+                        leader_line_with_count(ui, Some(expanded), cumulative_leaves, tertiary)
+                    {
+                        r.on_hover_text(count_hover(true, cumulative_leaves));
+                    }
                 }
             });
 
@@ -818,13 +953,14 @@ impl TopicTreeUI for ZenohExplorer {
                     transfer::suggested_export_filename(topic, payload.filename.as_deref());
                 match transfer::export_payload_to_file(&suggested, &payload.bytes) {
                     Ok(Some(path)) => {
-                        self.ui_alert = Some(format!("✓ Saved to {}", path.display()));
+                        self.ui_alert =
+                            Some(UiAlert::Success(format!("Saved to {}", path.display())));
                     }
                     Ok(None) => {} // user cancelled
-                    Err(e) => self.ui_alert = Some(format!("Save failed: {}", e)),
+                    Err(e) => self.ui_alert = Some(UiAlert::Error(format!("Save failed: {}", e))),
                 }
             }
-            Err(e) => self.ui_alert = Some(format!("Save failed: {}", e)),
+            Err(e) => self.ui_alert = Some(UiAlert::Error(format!("Save failed: {}", e))),
         }
     }
 }
@@ -833,6 +969,19 @@ impl TopicTreeUI for ZenohExplorer {
 /// 🛠 system (@/ zenoh admin space), 🏷 text/JSON (live KV telemetry),
 /// 💾 binary/unknown (firmware/blobs). Prefers the declared encoding, falls
 /// back to the payload preview heuristic (binary previews start with "[binary").
+impl ZenohExplorer {
+    /// Subscribe is enabled when connected, the key is valid, and no row or
+    /// pending Subscribe already has this key. The key is validated as typed,
+    /// like the error shown above the button: a surrounding space is an error.
+    pub(crate) fn subscribe_enabled(&self) -> bool {
+        let key = self.subscribe_key.trim();
+        matches!(self.connection_status, ConnectionStatus::Connected)
+            && crate::validation::key_expr_error(&self.subscribe_key).is_none()
+            && !self.subscriptions.iter().any(|s| s.key_expr == key)
+            && !self.pending_subscribes.contains(key)
+    }
+}
+
 pub(crate) fn leaf_icon(
     full_path: &str,
     encoding: Option<&str>,
@@ -857,9 +1006,87 @@ pub(crate) fn leaf_icon(
     }
 }
 
+/// Message History scans only the newest `scan_limit` list rows and shows at
+/// most 50 cards. When the list is longer than the scan and fewer than 50 rows
+/// were found, older rows for the key may still be in the list, so History
+/// says what it searched instead of reading as "no messages".
+fn history_scan_note(list_len: usize, scan_limit: usize, shown: usize) -> Option<String> {
+    (list_len > scan_limit && shown < 50)
+        .then(|| format!("Searched only the newest {scan_limit} of {list_len} list rows"))
+}
+
+/// `"1 {one}"` or `"{n} {many}"`.
+fn counted(n: usize, one: &str, many: &str) -> String {
+    if n == 1 {
+        format!("1 {one}")
+    } else {
+        format!("{n} {many}")
+    }
+}
+
+/// Hover text for a tree row's count: leaves below a branch, messages on a leaf.
+fn count_hover(is_branch: bool, n: usize) -> String {
+    if is_branch {
+        counted(n, "leaf topic below", "leaf topics below")
+    } else {
+        counted(n, "message received", "messages received")
+    }
+}
+
+/// Why Message History has no card for a topic the list scan fully covered.
+fn history_empty_reason(message_count: usize, paused: bool) -> &'static str {
+    if paused {
+        "Paused: new messages for this topic are not listed"
+    } else if message_count == 0 {
+        "No messages on this exact key yet"
+    } else {
+        "Not in the list: cleared, trimmed, rate-limited or received while paused (the count above keeps them)"
+    }
+}
+
+/// Coarse age: seconds, minutes, hours or days.
+fn format_age(d: std::time::Duration) -> String {
+    let s = d.as_secs();
+    match s {
+        0..=59 => format!("{s}s"),
+        60..=3599 => format!("{}m", s / 60),
+        3600..=86_399 => format!("{}h", s / 3600),
+        _ => format!("{}d", s / 86_400),
+    }
+}
+
+/// One line describing what a branch holds below it.
+fn branch_summary_text(s: &SubtreeSummary, now: Instant) -> String {
+    let mut text = format!(
+        "{} · {}",
+        counted(s.topics, "topic below", "topics below"),
+        counted(s.messages, "message received", "messages received"),
+    );
+    if let Some(at) = s.last_seen {
+        text.push_str(&format!(
+            " · last message {} ago",
+            format_age(now.saturating_duration_since(at))
+        ));
+    }
+    text
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn double_subscribe_is_ignored_while_pending() {
+        let (mut app, _tx) = ZenohExplorer::test_app();
+        app.connection_status = ConnectionStatus::Connected;
+        app.subscribe_key = "demo/**".to_string();
+        assert!(app.subscribe_enabled());
+        app.pending_subscribes.insert("demo/**".to_string());
+        assert!(
+            !app.subscribe_enabled(),
+            "a second click before SubscriptionCreated does nothing"
+        );
+    }
 
     #[test]
     fn leaf_icons_bucket_correctly() {
@@ -875,5 +1102,210 @@ mod tests {
             "💾"
         );
         assert_eq!(leaf_icon("demo/t", None, None), "💾");
+    }
+
+    /// Texts painted by one headless frame of `show_topic_details`.
+    fn details_texts(app: &mut ZenohExplorer) -> Vec<String> {
+        fn collect(shape: &egui::Shape, out: &mut Vec<String>) {
+            match shape {
+                egui::Shape::Text(t) => out.push(t.galley.text().to_string()),
+                egui::Shape::Vec(v) => v.iter().for_each(|s| collect(s, out)),
+                _ => {}
+            }
+        }
+        let ctx = egui::Context::default();
+        let output = ctx.run(egui::RawInput::default(), |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| app.show_topic_details(ui));
+        });
+        let mut texts = Vec::new();
+        for clipped in &output.shapes {
+            collect(&clipped.shape, &mut texts);
+        }
+        texts
+    }
+
+    #[test]
+    fn topic_details_show_delete_and_source_time() {
+        use chrono::TimeZone;
+        let (mut app, _tx) = ZenohExplorer::test_app();
+        let ts = chrono::Utc.with_ymd_and_hms(2026, 9, 25, 12, 0, 0).unwrap()
+            + chrono::Duration::milliseconds(123);
+        app.browse_tree
+            .write()
+            .unwrap()
+            .insert_path("demo/x")
+            .update_data(
+                String::new(),
+                "text/plain".to_string(),
+                false,
+                SampleKindView::Delete,
+                Some(ts),
+            );
+        app.browse_tree
+            .write()
+            .unwrap()
+            .insert_path("demo/y")
+            .update_data(
+                "hello".to_string(),
+                "text/plain".to_string(),
+                false,
+                SampleKindView::Put,
+                None,
+            );
+
+        app.selected_topic = Some("demo/x".to_string());
+        let texts = details_texts(&mut app);
+        assert!(
+            texts.iter().any(|t| t == "Last sample: DELETE"),
+            "{texts:?}"
+        );
+        assert!(texts.iter().any(|t| t == "Source time:"), "{texts:?}");
+        assert!(
+            texts
+                .iter()
+                .any(|t| *t == format_local_time(&ts, &chrono::Utc::now())),
+            "{texts:?}"
+        );
+
+        app.selected_topic = Some("demo/y".to_string());
+        let texts = details_texts(&mut app);
+        assert!(texts.iter().any(|t| t == "hello"), "{texts:?}");
+        assert!(
+            !texts.iter().any(|t| t == "Last sample: DELETE"),
+            "{texts:?}"
+        );
+        assert!(!texts.iter().any(|t| t == "Source time:"), "{texts:?}");
+    }
+
+    #[test]
+    fn history_names_the_scan_window_instead_of_claiming_empty() {
+        let (mut app, _tx) = ZenohExplorer::test_app();
+        app.browse_tree
+            .write()
+            .unwrap()
+            .insert_path("slow/a")
+            .update_data(
+                "tree-val".to_string(),
+                "text/plain".to_string(),
+                false,
+                SampleKindView::Put,
+                None,
+            );
+        let mk = |k: &str, p: &str| {
+            ZenohMessage::new_with_bytes(
+                k.to_string(),
+                p.to_string(),
+                p.as_bytes().to_vec(),
+                "text/plain".to_string(),
+                chrono::Utc::now(),
+                MessageType::Subscribe,
+                false,
+                MessageSource::MonitorSession,
+            )
+        };
+        app.selected_topic = Some("slow/a".to_string());
+
+        // A short list with no row for the key keeps the plain empty state.
+        app.messages.push_back(mk("fast/b", "x"));
+        let texts = details_texts(&mut app);
+        assert!(
+            texts.iter().any(|t| *t == history_empty_reason(1, false)),
+            "{texts:?}"
+        );
+        assert!(
+            !texts.iter().any(|t| t.starts_with("Searched only")),
+            "{texts:?}"
+        );
+
+        // The key's only row is older than the scan window, but still listed.
+        app.messages.clear();
+        app.messages.push_back(mk("slow/a", "hist-val"));
+        for _ in 0..20_000 {
+            app.messages.push_back(mk("fast/b", "x"));
+        }
+        assert!(app.messages.len() <= app.max_messages);
+        let texts = details_texts(&mut app);
+        assert!(
+            !texts
+                .iter()
+                .any(|t| *t == history_empty_reason(1, false)
+                    || t.starts_with("Waiting for messages")),
+            "{texts:?}"
+        );
+        assert!(
+            texts
+                .iter()
+                .any(|t| t == "Searched only the newest 20000 of 20001 list rows"),
+            "{texts:?}"
+        );
+
+        // One row inside the window: its card shows, and the note says why
+        // there may be fewer than 50.
+        app.messages.push_back(mk("slow/a", "new-val"));
+        let texts = details_texts(&mut app);
+        assert!(texts.iter().any(|t| t == "new-val"), "{texts:?}");
+        assert!(
+            texts
+                .iter()
+                .any(|t| t == "Searched only the newest 20000 of 20002 list rows"),
+            "{texts:?}"
+        );
+    }
+
+    #[test]
+    fn history_empty_reason_rules() {
+        assert_eq!(
+            history_empty_reason(0, false),
+            "No messages on this exact key yet"
+        );
+        assert_eq!(history_empty_reason(360, false), "Not in the list: cleared, trimmed, rate-limited or received while paused (the count above keeps them)");
+        assert_eq!(
+            history_empty_reason(360, true),
+            "Paused: new messages for this topic are not listed"
+        );
+    }
+
+    #[test]
+    fn count_hover_names_unit() {
+        assert_eq!(count_hover(true, 6), "6 leaf topics below");
+        assert_eq!(count_hover(false, 360), "360 messages received");
+        assert_eq!(count_hover(true, 1), "1 leaf topic below");
+        assert_eq!(count_hover(false, 1), "1 message received");
+    }
+
+    #[test]
+    fn history_excludes_query_replies() {
+        // G3-12: a reply for the selected key belongs to Query Results, not History.
+        let (mut app, _tx) = ZenohExplorer::test_app();
+        app.browse_tree
+            .write()
+            .unwrap()
+            .insert_path("r/a")
+            .update_data(
+                "sub-val".to_string(),
+                "text/plain".to_string(),
+                false,
+                SampleKindView::Put,
+                None,
+            );
+        let mk = |p: &str, t: MessageType| {
+            ZenohMessage::new_with_bytes(
+                "r/a".to_string(),
+                p.to_string(),
+                p.as_bytes().to_vec(),
+                "text/plain".to_string(),
+                chrono::Utc::now(),
+                t,
+                false,
+                MessageSource::MonitorSession,
+            )
+        };
+        app.messages
+            .push_back(mk("sub-val", MessageType::Subscribe));
+        app.messages
+            .push_back(mk("reply-val", MessageType::QueryReply));
+        app.selected_topic = Some("r/a".to_string());
+        let texts = details_texts(&mut app);
+        assert!(!texts.iter().any(|t| t.contains("reply-val")), "{texts:?}");
     }
 }

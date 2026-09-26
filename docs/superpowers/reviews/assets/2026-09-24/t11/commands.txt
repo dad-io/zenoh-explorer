@@ -1,0 +1,58 @@
+# Commands used for T11, run 2026-09-25.
+# W = the isolated git worktree holding branch spike/causal-motion-egui (commit 267dd50)
+# S = a scratch dir outside the repo (the session scratchpad); the scripts are copied to scripts/ here
+# Machine: macOS 15 (Darwin 24.6.0), built-in Liquid Retina XDR display (ProMotion, up to 120 Hz), pixels_per_point = 2
+
+# 1. Branch and build (no change to Cargo.toml, src/, .github/, assets/)
+git checkout -b spike/causal-motion-egui                       # from 6a52865 (bearhug-mode-test at that time)
+cargo build --offline --example causal_motion_spike            # dev profile, which `cargo run --example` uses
+cargo build --offline --release --example causal_motion_spike  # release profile, for the frame-time runs
+cargo clippy --offline --example causal_motion_spike           # 0 warnings
+rustfmt --edition 2021 --check examples/causal_motion_spike.rs # clean
+git commit -m "spike(T11): causal motion feasibility spike in egui 0.29.1"   # 267dd50
+
+# 2. Launch exactly as the plan row says, leave it idle for 8 s, then kill it (scripts/cargorun.sh)
+SPIKE_LOG=$S/t11/cargo-run-idle.log cargo run --offline --example causal_motion_spike
+#    -> logs/cargo-run.txt, logs/cargo-run-idle.log (5 frames in 8 s: no repaint while idle)
+
+# 3. Scripted runs (scripts/runall.sh -> scripts/run.sh <profile> <script> <tag> [shots] [rows])
+#    The example's autoplay (SPIKE_SCRIPT) calls the same click handler as a real click. It only
+#    schedules its own steps with request_repaint_after, so without SPIKE_SHOTS the log shows the
+#    effect's real repaint policy. SPIKE_SHOTS reads back every frame with ViewportCommand::Screenshot.
+bash run.sh release reveal    rel-reveal                    # timing + policy (logs/rel-reveal.log)
+bash run.sh release reveal    rel-reveal-rows2000 "" 2000   # + 2000 label rows in panel B (load proxy)
+bash run.sh release supersede rel-supersede                 # clicks at +0, +272, +602 ms (T9 repeat spacing)
+bash run.sh release reduced   rel-reduced                   # Reduce motion on before the click
+bash run.sh release toggle    rel-toggle                    # Reduce motion on at commit+~400 ms, off at commit+~700 ms
+bash run.sh debug   reveal    dev-reveal                    # dev-profile timing
+bash run.sh release reveal    shots-reveal 1                # frame-capture runs (GL framebuffer readback)
+bash run.sh release supersede shots-supersede 1
+bash run.sh release reduced   shots-reduced 1
+bash run.sh release toggle    shots-toggle 1
+# after rustfmt and the commit, one more timing run on the committed source:
+bash run.sh release reveal    rel-reveal-committed
+
+# 4. Analysis. The raw PPM dumps (1760x1040 px per frame) were kept in scratch only and deleted after step 5 (about 5 GB).
+python3 analyze.py <logs> > analysis.txt       # frame time, repaint policy, per-side order/onset/peak/settle from the log
+python3 extra.py <logs dir> > extra.txt         # interval histograms, shifted cpu_prev, pre-click/at-rest costs, matched-window effect, capture-run cpu
+python3 alldiff.py                             # -> diff-{reveal,supersede,reduced,toggle}.txt (diff.py: pixel classes vs the pre-click frame)
+python3 sides.py shots-reveal/ logs/shots-reveal.log sides-reveal.txt   # per-side onset and edge colours from pixels
+python3 final.py shots-reveal/ shots-supersede/ shots-reduced/ shots-toggle/ > final-frames.txt   # last frames compared
+
+# 5. Evidence assembly (build.py, keyframes.py, copyout.py)
+#    frames/: 17 crops at the T9 strip times (nearest captured frame), crop x70-350 y44-284 pt = 560x480 px, as T9
+#    strip.html/png, compare.html/png (T9 frame | T11 frame), video/*.mp4 (every captured frame for its real duration,
+#    scaled to 880 px), keyframes/ (880 px) and window-*.png (1760 px, full window)
+"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless=new --disable-gpu --hide-scrollbars --window-size=1160,1420 --screenshot=strip.png file://<t11>/strip.html
+"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless=new --disable-gpu --hide-scrollbars --window-size=1240,1260 --screenshot=compare.png file://<t11>/compare.html
+ffmpeg -f concat -safe 0 -i concat-<scenario>.txt -vf scale=880:-2,format=yuv420p -c:v libx264 -crf 18 -r 120 -fps_mode cfr video/<scenario>.mp4
+
+# Not used: `screencapture -l <windowid>`. It would need the macOS Screen Recording permission, and the brief says not to
+# click permission prompts. The in-app GL readback captures exactly the pixels egui_glow rendered, tagged with each frame's i.time.
+
+# Branch checks (run in W after the commit)
+git diff --stat main...HEAD -- src Cargo.toml                         # empty
+git diff --stat 6a52865 HEAD                                          # examples/causal_motion_spike.rs | 1062 +++ (the only file)
+git diff --stat bearhug-mode-test -- src Cargo.toml examples          # only examples/causal_motion_spike.rs (the spike itself)
+git diff --stat main...bearhug-mode-test -- src Cargo.toml examples   # empty: the review branch has no src/Cargo/examples change
+git branch --contains 267dd50                                         # spike/causal-motion-egui only

@@ -1,0 +1,3 @@
+    Checking zenoh-explorer v0.9.1 (~/Documents/github/harnassis/work/zenoh-explorer-test)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 1.55s
+exit=0

@@ -1,0 +1,28 @@
+# Most common RGB values in sample boxes of T1 captures (run from ../app: python sample_pixels.py, needs Pillow).
+# Box coords are in a 2000-px-wide preview of the 2800-px capture; the script multiplies by 1.4 to get capture pixels (capture px = 2 x window points).
+light-1400-03-topic-details-leaf.png Disconnect button pts(12, 110, 110, 132): (0, 122, 255)x3324, (28, 28, 30)x122, (24, 40, 60)x18, (27, 31, 37)x15, (26, 36, 50)x14
+light-1400-03-topic-details-leaf.png selected temp1 row pts(56, 686, 144, 712): (230, 255, 255)x3598, (28, 28, 30)x327, (55, 58, 60)x18, (46, 48, 50)x13, (45, 47, 49)x12
+light-1400-03-topic-details-leaf.png progress fill pts(155, 538, 255, 558): (225, 255, 255)x1824, (226, 255, 255)x1750, (28, 28, 30)x42, (255, 255, 255)x30, (250, 250, 250)x10
+light-1400-03-topic-details-leaf.png Pause button pts(783, 232, 862, 252): (0, 122, 255)x2285, (60, 60, 67)x309, (19, 102, 195)x23, (13, 108, 214)x15, (13, 109, 215)x14
+light-1400-03-topic-details-leaf.png history group box pts(594, 446, 766, 514): (255, 255, 255)x19881, (0, 122, 255)x1329, (60, 60, 67)x220, (60, 60, 60)x96, (115, 115, 120)x55
+light-1400-03-topic-details-leaf.png header bg pts(300, 80, 900, 95): (248, 248, 248)x17640
+light-1400-03-topic-details-leaf.png detail bg pts(700, 600, 1900, 1000): (255, 255, 255)x927803, (0, 122, 255)x7974, (60, 60, 60)x2830, (60, 60, 67)x142, (205, 229, 255)x91
+light-1400-03-topic-details-leaf.png tree bg pts(100, 1000, 500, 1200): (255, 255, 255)x156800
+light-1400-03-topic-details-leaf.png memory text pts(1540, 62, 1740, 80): (248, 248, 248)x5346, (52, 199, 89)x397, (53, 199, 90)x30, (62, 201, 97)x21, (107, 213, 134)x20
+light-1400-03-topic-details-leaf.png SUB badge pts(720, 458, 757, 478): (0, 122, 255)x967, (255, 255, 255)x183, (205, 229, 255)x15, (67, 157, 255)x13, (218, 236, 255)x11
+light-1400-03-topic-details-leaf.png code bg pts(594, 340, 634, 360): (240, 240, 240)x1185, (28, 28, 30)x142, (150, 150, 151)x14, (31, 31, 33)x5, (129, 129, 130)x5
+light-1400-03-topic-details-leaf.png text edit pts(100, 292, 500, 316): (250, 250, 250)x18391, (28, 28, 30)x102, (156, 156, 157)x13, (113, 113, 114)x12, (47, 47, 49)x12
+light-1400-03-topic-details-leaf.png separator band pts(596, 255, 1970, 268): (255, 255, 255)x28860, (158, 158, 158)x1925, (60, 60, 60)x1924, (157, 157, 157)x1923
+dark-1400-03-topic-details-leaf.png Disconnect button pts(12, 110, 110, 132): (10, 132, 255)x3324, (255, 255, 255)x121, (234, 244, 255)x18, (222, 238, 255)x16, (223, 239, 255)x15
+dark-1400-03-topic-details-leaf.png selected temp1 row pts(56, 686, 144, 712): (73, 195, 255)x2799, (74, 196, 255)x799, (255, 255, 255)x330, (231, 247, 255)x17, (239, 250, 255)x17
+dark-1400-03-topic-details-leaf.png progress fill pts(155, 538, 255, 558): (61, 183, 255)x2114, (60, 182, 255)x1460, (255, 255, 255)x43, (75, 75, 75)x30, (60, 60, 60)x10
+dark-1400-03-topic-details-leaf.png Pause button pts(783, 232, 862, 252): (10, 132, 255)x2285, (200, 200, 200)x309, (51, 147, 243)x21, (194, 198, 202)x14, (70, 153, 237)x13
+dark-1400-03-topic-details-leaf.png history group box pts(594, 446, 766, 514): (75, 75, 75)x19806, (0, 122, 255)x1329, (200, 200, 200)x234, (60, 60, 60)x101, (255, 255, 255)x99
+dark-1400-03-topic-details-leaf.png header bg pts(300, 80, 900, 95): (45, 45, 45)x17640
+dark-1400-03-topic-details-leaf.png detail bg pts(700, 600, 1900, 1000): (75, 75, 75)x927346, (0, 122, 255)x7974, (60, 60, 60)x2848, (255, 255, 255)x594, (200, 200, 200)x134
+dark-1400-03-topic-details-leaf.png tree bg pts(100, 1000, 500, 1200): (75, 75, 75)x156800
+dark-1400-03-topic-details-leaf.png memory text pts(1540, 62, 1740, 80): (45, 45, 45)x5256, (52, 199, 89)x424, (52, 196, 88)x28, (52, 195, 88)x27, (52, 198, 89)x27
+dark-1400-03-topic-details-leaf.png SUB badge pts(720, 458, 757, 478): (0, 122, 255)x967, (255, 255, 255)x99, (75, 75, 75)x84, (205, 229, 255)x15, (67, 157, 255)x13
+dark-1400-03-topic-details-leaf.png code bg pts(594, 340, 634, 360): (30, 30, 30)x1185, (255, 255, 255)x142, (125, 125, 125)x12, (107, 107, 107)x8, (126, 126, 126)x6
+dark-1400-03-topic-details-leaf.png text edit pts(100, 292, 500, 316): (60, 60, 60)x18392, (255, 255, 255)x103, (180, 180, 180)x20, (229, 229, 229)x16, (238, 238, 238)x13
+dark-1400-03-topic-details-leaf.png separator band pts(596, 255, 1970, 268): (75, 75, 75)x28860, (68, 68, 68)x1925, (60, 60, 60)x1924, (67, 67, 67)x1923

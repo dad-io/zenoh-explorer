@@ -1,0 +1,6 @@
+#!/bin/sh
+set -eu
+export PYTHONDONTWRITEBYTECODE=1
+root=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
+export PYTHONPATH="$root/.bearhug/lib"
+exec python3 -m bearhug.project_architecture --root "$root" "$@"

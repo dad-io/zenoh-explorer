@@ -1,0 +1,297 @@
+[2m2026-09-25T15:47:56.964540Z[0m [32m INFO[0m [2mzenoh_explorer[0m[2m:[0m Zenoh Explorer starting...
+[2m2026-09-25T15:47:56.964724Z[0m [32m INFO[0m [2mzenoh_explorer[0m[2m:[0m Launching eframe application...
+[2m2026-09-25T15:47:57.245401Z[0m [32m INFO[0m [2mzenoh_explorer[0m[2m:[0m Creating Zenoh Explorer instance...
+[2m2026-09-25T15:47:57.245597Z[0m [32m INFO[0m [2mzenoh_explorer::app[0m[2m:[0m ZenohExplorer initialized with worker and buffer threads
+[2m2026-09-25T15:47:57.245718Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Message buffer thread started
+[2m2026-09-25T15:47:57.246509Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Zenoh worker thread started
+[2m2026-09-25T15:47:57.246584Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Worker thread main loop starting...
+[2m2026-09-25T15:47:57.494996Z[0m [32m INFO[0m [2mzenoh_explorer::app[0m[2m:[0m First UI update frame - window should be visible now
+[2m2026-09-25T15:48:02.250819Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Worker received command: Ping
+[2m2026-09-25T15:48:06.670880Z[0m [32m INFO[0m [2mzenoh_explorer::app[0m[2m:[0m GUI sending Connect command - mode: peer, locators: tcp/localhost:99999, listen_port: 7447
+[2m2026-09-25T15:48:06.670928Z[0m [32m INFO[0m [2mzenoh_explorer::app[0m[2m:[0m Connect command sent successfully
+[2m2026-09-25T15:48:06.670941Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Worker received command: Connect { locators: "tcp/localhost:99999", listen_port: "7447", mode: "peer", config_json: "{}" }
+[2m2026-09-25T15:48:06.670985Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Worker processing connect command - mode: peer, locators: tcp/localhost:99999, listen_port: 7447
+[2m2026-09-25T15:48:06.671018Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Attempting to connect - mode: peer, locators: tcp/localhost:99999, listen_port: 7447
+[2m2026-09-25T15:48:06.671147Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Set max_message_size to 107374182400 bytes (100GB)
+[2m2026-09-25T15:48:06.671167Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Set batch_size to 65535 bytes, rx_buffer to 16MB (protocol: tcp)
+[2m2026-09-25T15:48:06.671182Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Set queue sizes to 16, batching disabled, wait_before_close to 300 seconds
+[2m2026-09-25T15:48:06.671198Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Setting peer mode
+[2m2026-09-25T15:48:06.671206Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Peer mode - configuring scouting
+[2m2026-09-25T15:48:06.671228Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Peer mode, listening on tcp/[::]:7447
+[2m2026-09-25T15:48:06.671281Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Set 1 endpoints
+[2m2026-09-25T15:48:06.671292Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Opening Zenoh session with mode: "peer"
+[2m2026-09-25T15:48:06.671302Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Final config - connect endpoints: Unique([tcp/localhost:99999])
+[2m2026-09-25T15:48:06.671321Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Peer mode - listen endpoints: Unique([tcp/[::]:7447])
+[2m2026-09-25T15:48:06.671330Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Peer mode - multicast enabled: Some(true)
+[2m2026-09-25T15:48:06.671343Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Starting Zenoh session open...
+[2m2026-09-25T15:48:06.671606Z[0m [32m INFO[0m [2mzenoh::net::runtime[0m[2m:[0m Using ZID: a4fd9d7566ae0468d80cab40f55336d0
+[2m2026-09-25T15:48:06.674083Z[0m [32m INFO[0m [2mzenoh::net::runtime::orchestrator[0m[2m:[0m Zenoh can be reached at: tcp/[<ipv6-ula>]:7447
+[2m2026-09-25T15:48:06.674117Z[0m [32m INFO[0m [2mzenoh::net::runtime::orchestrator[0m[2m:[0m Zenoh can be reached at: tcp/[<ipv6-link-local>]:7447
+[2m2026-09-25T15:48:06.674164Z[0m [32m INFO[0m [2mzenoh::net::runtime::orchestrator[0m[2m:[0m Zenoh can be reached at: tcp/[<ipv6-link-local>]:7447
+[2m2026-09-25T15:48:06.674176Z[0m [32m INFO[0m [2mzenoh::net::runtime::orchestrator[0m[2m:[0m Zenoh can be reached at: tcp/[<ipv6-link-local>]:7447
+[2m2026-09-25T15:48:06.674187Z[0m [32m INFO[0m [2mzenoh::net::runtime::orchestrator[0m[2m:[0m Zenoh can be reached at: tcp/[<ipv6-link-local>]:7447
+[2m2026-09-25T15:48:06.674196Z[0m [32m INFO[0m [2mzenoh::net::runtime::orchestrator[0m[2m:[0m Zenoh can be reached at: tcp/[<ipv6-link-local>]:7447
+[2m2026-09-25T15:48:06.674205Z[0m [32m INFO[0m [2mzenoh::net::runtime::orchestrator[0m[2m:[0m Zenoh can be reached at: tcp/[<ipv6-link-local>]:7447
+[2m2026-09-25T15:48:06.674215Z[0m [32m INFO[0m [2mzenoh::net::runtime::orchestrator[0m[2m:[0m Zenoh can be reached at: tcp/[<ipv6-link-local>]:7447
+[2m2026-09-25T15:48:06.674223Z[0m [32m INFO[0m [2mzenoh::net::runtime::orchestrator[0m[2m:[0m Zenoh can be reached at: tcp/[<ipv6-link-local>]:7447
+[2m2026-09-25T15:48:06.674231Z[0m [32m INFO[0m [2mzenoh::net::runtime::orchestrator[0m[2m:[0m Zenoh can be reached at: tcp/[<ipv6-link-local>]:7447
+[2m2026-09-25T15:48:06.674239Z[0m [32m INFO[0m [2mzenoh::net::runtime::orchestrator[0m[2m:[0m Zenoh can be reached at: tcp/[<ipv6-link-local>]:7447
+[2m2026-09-25T15:48:06.674246Z[0m [32m INFO[0m [2mzenoh::net::runtime::orchestrator[0m[2m:[0m Zenoh can be reached at: tcp/[<ipv6-link-local>]:7447
+[2m2026-09-25T15:48:06.674254Z[0m [32m INFO[0m [2mzenoh::net::runtime::orchestrator[0m[2m:[0m Zenoh can be reached at: tcp/[<ipv6-link-local>]:7447
+[2m2026-09-25T15:48:06.674262Z[0m [32m INFO[0m [2mzenoh::net::runtime::orchestrator[0m[2m:[0m Zenoh can be reached at: tcp/[<ipv6-link-local>]:7447
+[2m2026-09-25T15:48:06.674271Z[0m [32m INFO[0m [2mzenoh::net::runtime::orchestrator[0m[2m:[0m Zenoh can be reached at: tcp/<lan-ipv4>:7447
+[2m2026-09-25T15:48:06.674398Z[0m [32m INFO[0m [2mzenoh::net::runtime::orchestrator[0m[2m:[0m zenohd listening scout messages on 224.0.0.224:7446
+[2m2026-09-25T15:48:07.176714Z[0m [33m WARN[0m [2mzenoh::net::runtime::orchestrator[0m[2m:[0m Scouting delay elapsed before start conditions are met.
+[2m2026-09-25T15:48:07.176787Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Successfully connected to Zenoh network in peer mode
+[2m2026-09-25T15:48:07.176803Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Peer mode: waiting for session to stabilize...
+[2m2026-09-25T15:48:07.678934Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Worker successfully created publishing session
+[2m2026-09-25T15:48:07.679004Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Successfully sent PublishingConnected event to GUI
+[2m2026-09-25T15:48:07.679074Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Connecting monitor session on port 8447
+[2m2026-09-25T15:48:07.679100Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Attempting to connect monitor session - mode: peer, locators: tcp/localhost:99999, monitor_port: 8447
+[2m2026-09-25T15:48:07.679133Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Monitor session: Setting peer mode with scouting DISABLED
+[2m2026-09-25T15:48:07.679148Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Monitor session: listening on tcp/[::]:8447
+[2m2026-09-25T15:48:07.679169Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Monitor session: Set 1 connect endpoints
+[2m2026-09-25T15:48:07.679180Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Opening monitor Zenoh session...
+[2m2026-09-25T15:48:07.679215Z[0m [32m INFO[0m [2mzenoh::net::runtime[0m[2m:[0m Using ZID: c28cf645537534c6fd60ad36a63972b6
+[2m2026-09-25T15:48:07.679755Z[0m [32m INFO[0m [2mzenoh::net::runtime::orchestrator[0m[2m:[0m Zenoh can be reached at: tcp/[<ipv6-ula>]:8447
+[2m2026-09-25T15:48:07.679771Z[0m [32m INFO[0m [2mzenoh::net::runtime::orchestrator[0m[2m:[0m Zenoh can be reached at: tcp/[<ipv6-link-local>]:8447
+[2m2026-09-25T15:48:07.679780Z[0m [32m INFO[0m [2mzenoh::net::runtime::orchestrator[0m[2m:[0m Zenoh can be reached at: tcp/[<ipv6-link-local>]:8447
+[2m2026-09-25T15:48:07.679789Z[0m [32m INFO[0m [2mzenoh::net::runtime::orchestrator[0m[2m:[0m Zenoh can be reached at: tcp/[<ipv6-link-local>]:8447
+[2m2026-09-25T15:48:07.679802Z[0m [32m INFO[0m [2mzenoh::net::runtime::orchestrator[0m[2m:[0m Zenoh can be reached at: tcp/[<ipv6-link-local>]:8447
+[2m2026-09-25T15:48:07.679814Z[0m [32m INFO[0m [2mzenoh::net::runtime::orchestrator[0m[2m:[0m Zenoh can be reached at: tcp/[<ipv6-link-local>]:8447
+[2m2026-09-25T15:48:07.679825Z[0m [32m INFO[0m [2mzenoh::net::runtime::orchestrator[0m[2m:[0m Zenoh can be reached at: tcp/[<ipv6-link-local>]:8447
+[2m2026-09-25T15:48:07.679835Z[0m [32m INFO[0m [2mzenoh::net::runtime::orchestrator[0m[2m:[0m Zenoh can be reached at: tcp/[<ipv6-link-local>]:8447
+[2m2026-09-25T15:48:07.679844Z[0m [32m INFO[0m [2mzenoh::net::runtime::orchestrator[0m[2m:[0m Zenoh can be reached at: tcp/[<ipv6-link-local>]:8447
+[2m2026-09-25T15:48:07.679852Z[0m [32m INFO[0m [2mzenoh::net::runtime::orchestrator[0m[2m:[0m Zenoh can be reached at: tcp/[<ipv6-link-local>]:8447
+[2m2026-09-25T15:48:07.679865Z[0m [32m INFO[0m [2mzenoh::net::runtime::orchestrator[0m[2m:[0m Zenoh can be reached at: tcp/[<ipv6-link-local>]:8447
+[2m2026-09-25T15:48:07.679874Z[0m [32m INFO[0m [2mzenoh::net::runtime::orchestrator[0m[2m:[0m Zenoh can be reached at: tcp/[<ipv6-link-local>]:8447
+[2m2026-09-25T15:48:07.679883Z[0m [32m INFO[0m [2mzenoh::net::runtime::orchestrator[0m[2m:[0m Zenoh can be reached at: tcp/[<ipv6-link-local>]:8447
+[2m2026-09-25T15:48:07.679892Z[0m [32m INFO[0m [2mzenoh::net::runtime::orchestrator[0m[2m:[0m Zenoh can be reached at: tcp/[<ipv6-link-local>]:8447
+[2m2026-09-25T15:48:07.679902Z[0m [32m INFO[0m [2mzenoh::net::runtime::orchestrator[0m[2m:[0m Zenoh can be reached at: tcp/<lan-ipv4>:8447
+[2m2026-09-25T15:48:07.684163Z[0m [32m INFO[0m [2mzenoh_explorer::events[0m[2m:[0m GUI received PublishingConnected event
+[2m2026-09-25T15:48:08.182234Z[0m [33m WARN[0m [2mzenoh::net::runtime::orchestrator[0m[2m:[0m Scouting delay elapsed before start conditions are met.
+[2m2026-09-25T15:48:08.182300Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Successfully connected monitor session in peer mode
+[2m2026-09-25T15:48:08.433478Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Worker successfully created monitor session
+[2m2026-09-25T15:48:08.433668Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Monitor session subscribed to **
+[2m2026-09-25T15:48:08.433734Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Successfully sent MonitorConnected event to GUI
+[2m2026-09-25T15:48:08.433760Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Worker received command: Ping
+[2m2026-09-25T15:48:08.433778Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Worker received command: Ping
+[2m2026-09-25T15:48:08.433789Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Worker received command: Ping
+[2m2026-09-25T15:48:08.433799Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Worker received command: Ping
+[2m2026-09-25T15:48:08.433811Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Worker received command: Ping
+[2m2026-09-25T15:48:08.433824Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Worker received command: Ping
+[2m2026-09-25T15:48:08.433836Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Worker received command: Ping
+[2m2026-09-25T15:48:08.433895Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Worker received command: Ping
+[2m2026-09-25T15:48:08.433906Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Worker received command: Ping
+[2m2026-09-25T15:48:08.433917Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Worker received command: Ping
+[2m2026-09-25T15:48:08.433929Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Worker received command: Ping
+[2m2026-09-25T15:48:08.433940Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Worker received command: Ping
+[2m2026-09-25T15:48:08.433952Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Worker received command: Ping
+[2m2026-09-25T15:48:08.433961Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Worker received command: Ping
+[2m2026-09-25T15:48:08.433971Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Worker received command: Ping
+[2m2026-09-25T15:48:08.433983Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Worker received command: Ping
+[2m2026-09-25T15:48:08.433996Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Worker received command: Ping
+[2m2026-09-25T15:48:08.434009Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Worker received command: Ping
+[2m2026-09-25T15:48:08.434020Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Worker received command: Ping
+[2m2026-09-25T15:48:08.434032Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Worker received command: Ping
+[2m2026-09-25T15:48:08.434087Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Worker received command: Ping
+[2m2026-09-25T15:48:08.434112Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Worker received command: Ping
+[2m2026-09-25T15:48:08.434129Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Worker received command: Ping
+[2m2026-09-25T15:48:08.434144Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Worker received command: Ping
+[2m2026-09-25T15:48:08.434159Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Worker received command: Ping
+[2m2026-09-25T15:48:08.434162Z[0m [32m INFO[0m [2mzenoh_explorer::events[0m[2m:[0m GUI received MonitorConnected event - fully connected
+[2m2026-09-25T15:48:08.434174Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Worker received command: Ping
+[2m2026-09-25T15:48:08.434220Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Worker received command: Ping
+[2m2026-09-25T15:48:08.434242Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Worker received command: Ping
+[2m2026-09-25T15:48:08.434262Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Worker received command: Ping
+[2m2026-09-25T15:48:08.434277Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Worker received command: Ping
+[2m2026-09-25T15:48:08.434291Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Worker received command: Ping
+[2m2026-09-25T15:48:08.434303Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Worker received command: Ping
+[2m2026-09-25T15:48:08.434315Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Worker received command: Ping
+[2m2026-09-25T15:48:08.434329Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Worker received command: Ping
+[2m2026-09-25T15:48:08.434342Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Worker received command: Ping
+[2m2026-09-25T15:48:08.434355Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Worker received command: Ping
+[2m2026-09-25T15:48:08.434369Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Worker received command: Ping
+[2m2026-09-25T15:48:08.434381Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Worker received command: Ping
+[2m2026-09-25T15:48:08.434438Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Worker received command: Ping
+[2m2026-09-25T15:48:08.434454Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Worker received command: Ping
+[2m2026-09-25T15:48:08.434468Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Worker received command: Ping
+[2m2026-09-25T15:48:08.434482Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Worker received command: Ping
+[2m2026-09-25T15:48:08.434495Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Worker received command: Ping
+[2m2026-09-25T15:48:08.434508Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Worker received command: Ping
+[2m2026-09-25T15:48:08.434521Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Worker received command: Ping
+[2m2026-09-25T15:48:08.434534Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Worker received command: Ping
+[2m2026-09-25T15:48:08.434547Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Worker received command: Ping
+[2m2026-09-25T15:48:08.434560Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Worker received command: Ping
+[2m2026-09-25T15:48:08.434573Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Worker received command: Ping
+[2m2026-09-25T15:48:08.434585Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Worker received command: Ping
+[2m2026-09-25T15:48:08.434598Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Worker received command: Ping
+[2m2026-09-25T15:48:08.434611Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Worker received command: Ping
+[2m2026-09-25T15:48:08.434624Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Worker received command: Ping
+[2m2026-09-25T15:48:08.434636Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Worker received command: Ping
+[2m2026-09-25T15:48:08.434650Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Worker received command: Ping
+[2m2026-09-25T15:48:08.434662Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Worker received command: Ping
+[2m2026-09-25T15:48:08.434675Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Worker received command: Ping
+[2m2026-09-25T15:48:08.434687Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Worker received command: Ping
+[2m2026-09-25T15:48:08.434701Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Worker received command: Ping
+[2m2026-09-25T15:48:08.434717Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Worker received command: Ping
+[2m2026-09-25T15:48:08.434732Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Worker received command: Ping
+[2m2026-09-25T15:48:08.434747Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Worker received command: Ping
+[2m2026-09-25T15:48:08.434758Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Worker received command: Ping
+[2m2026-09-25T15:48:08.434770Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Worker received command: Ping
+[2m2026-09-25T15:48:08.434781Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Worker received command: Ping
+[2m2026-09-25T15:48:08.434790Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Worker received command: Ping
+[2m2026-09-25T15:48:08.434799Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Worker received command: Ping
+[2m2026-09-25T15:48:08.434812Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Worker received command: Ping
+[2m2026-09-25T15:48:08.434826Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Worker received command: Ping
+[2m2026-09-25T15:48:08.434838Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Worker received command: Ping
+[2m2026-09-25T15:48:08.434886Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Worker received command: Ping
+[2m2026-09-25T15:48:08.434900Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Worker received command: Ping
+[2m2026-09-25T15:48:08.434913Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Worker received command: Ping
+[2m2026-09-25T15:48:08.434925Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Worker received command: Ping
+[2m2026-09-25T15:48:08.434938Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Worker received command: Ping
+[2m2026-09-25T15:48:08.434955Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Worker received command: Ping
+[2m2026-09-25T15:48:08.434968Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Worker received command: Ping
+[2m2026-09-25T15:48:08.434980Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Worker received command: Ping
+[2m2026-09-25T15:48:08.434992Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Worker received command: Ping
+[2m2026-09-25T15:48:08.435003Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Worker received command: Ping
+[2m2026-09-25T15:48:08.435016Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Worker received command: Ping
+[2m2026-09-25T15:48:08.435028Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Worker received command: Ping
+[2m2026-09-25T15:48:08.435041Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Worker received command: Ping
+[2m2026-09-25T15:48:08.435053Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Worker received command: Ping
+[2m2026-09-25T15:48:08.435065Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Worker received command: Ping
+[2m2026-09-25T15:48:08.435074Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Worker received command: Ping
+[2m2026-09-25T15:48:08.435086Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Worker received command: Ping
+[2m2026-09-25T15:48:08.435094Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Worker received command: Ping
+[2m2026-09-25T15:48:08.435106Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Worker received command: Ping
+[2m2026-09-25T15:48:08.435120Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Worker received command: Ping
+[2m2026-09-25T15:48:08.435138Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Worker received command: Ping
+[2m2026-09-25T15:48:08.435148Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Worker received command: Ping
+[2m2026-09-25T15:48:08.435160Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Worker received command: Ping
+[2m2026-09-25T15:48:08.435172Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Worker received command: Ping
+[2m2026-09-25T15:48:08.435181Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Worker received command: Ping
+[2m2026-09-25T15:48:08.435190Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Worker received command: Ping
+[2m2026-09-25T15:48:08.435201Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Worker received command: Ping
+[2m2026-09-25T15:48:08.435211Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Worker received command: Ping
+[2m2026-09-25T15:48:08.435222Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Worker received command: Ping
+[2m2026-09-25T15:48:08.435233Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Worker received command: Ping
+[2m2026-09-25T15:48:08.435243Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Worker received command: Ping
+[2m2026-09-25T15:48:08.435253Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Worker received command: Ping
+[2m2026-09-25T15:48:08.435296Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Worker received command: Ping
+[2m2026-09-25T15:48:08.435307Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Worker received command: Ping
+[2m2026-09-25T15:48:08.435317Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Worker received command: Ping
+[2m2026-09-25T15:48:08.435328Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Worker received command: Ping
+[2m2026-09-25T15:48:08.435338Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Worker received command: Ping
+[2m2026-09-25T15:48:08.435348Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Worker received command: Ping
+[2m2026-09-25T15:48:08.435358Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Worker received command: Ping
+[2m2026-09-25T15:48:08.435369Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Worker received command: Ping
+[2m2026-09-25T15:48:08.435379Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Worker received command: Ping
+[2m2026-09-25T15:48:08.435390Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Worker received command: Ping
+[2m2026-09-25T15:48:08.435401Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Worker received command: Ping
+[2m2026-09-25T15:48:08.435413Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Worker received command: Ping
+[2m2026-09-25T15:48:08.435425Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Worker received command: Ping
+[2m2026-09-25T15:48:08.435437Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Worker received command: Ping
+[2m2026-09-25T15:48:08.435449Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Worker received command: Ping
+[2m2026-09-25T15:48:08.435461Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Worker received command: Ping
+[2m2026-09-25T15:48:08.435473Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Worker received command: Ping
+[2m2026-09-25T15:48:08.435485Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Worker received command: Ping
+[2m2026-09-25T15:48:08.435499Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Worker received command: Ping
+[2m2026-09-25T15:48:08.435508Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Worker received command: Ping
+[2m2026-09-25T15:48:08.435520Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Worker received command: Ping
+[2m2026-09-25T15:48:08.435532Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Worker received command: Ping
+[2m2026-09-25T15:48:08.435545Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Worker received command: Ping
+[2m2026-09-25T15:48:08.435558Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Worker received command: Ping
+[2m2026-09-25T15:48:08.435570Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Worker received command: Ping
+[2m2026-09-25T15:48:08.435581Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Worker received command: Ping
+[2m2026-09-25T15:48:08.435593Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Worker received command: Ping
+[2m2026-09-25T15:48:08.435607Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Worker received command: Ping
+[2m2026-09-25T15:48:08.435620Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Worker received command: Ping
+[2m2026-09-25T15:48:08.435634Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Worker received command: Ping
+[2m2026-09-25T15:48:08.435648Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Worker received command: Ping
+[2m2026-09-25T15:48:08.435660Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Worker received command: Ping
+[2m2026-09-25T15:48:08.435707Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Worker received command: Ping
+[2m2026-09-25T15:48:13.459852Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Worker received command: Ping
+[2m2026-09-25T15:48:18.521300Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Worker received command: Ping
+[2m2026-09-25T15:48:23.604756Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Worker received command: Ping
+[2m2026-09-25T15:48:28.700320Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Worker received command: Ping
+[2m2026-09-25T15:48:33.773463Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Worker received command: Ping
+[2m2026-09-25T15:48:37.570578Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Worker received command: Disconnect
+[2m2026-09-25T15:48:37.570645Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Monitor subscription cancelled
+[2m2026-09-25T15:48:37.570686Z[0m [32m INFO[0m [2mzenoh::api::session[0m[2m:[0m close session [3mzid[0m[2m=[0mc28cf645537534c6fd60ad36a63972b6
+[2m2026-09-25T15:48:37.570983Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Monitor session closed
+[2m2026-09-25T15:48:37.571042Z[0m [32m INFO[0m [2mzenoh::api::session[0m[2m:[0m close session [3mzid[0m[2m=[0ma4fd9d7566ae0468d80cab40f55336d0
+[2m2026-09-25T15:48:37.572474Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Publishing session closed
+[2m2026-09-25T15:48:38.846441Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Worker received command: Ping
+[2m2026-09-25T15:48:43.901279Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Worker received command: Ping
+[2m2026-09-25T15:48:44.918347Z[0m [32m INFO[0m [2mzenoh_explorer::app[0m[2m:[0m GUI sending Connect command - mode: peer, locators: , listen_port: 7500
+[2m2026-09-25T15:48:44.918410Z[0m [32m INFO[0m [2mzenoh_explorer::app[0m[2m:[0m Connect command sent successfully
+[2m2026-09-25T15:48:44.918464Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Worker received command: Connect { locators: "", listen_port: "7500", mode: "peer", config_json: "{}" }
+[2m2026-09-25T15:48:44.918525Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Worker processing connect command - mode: peer, locators: , listen_port: 7500
+[2m2026-09-25T15:48:44.918894Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Attempting to connect - mode: peer, locators: (none - using discovery), listen_port: 7500
+[2m2026-09-25T15:48:44.918945Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Set max_message_size to 107374182400 bytes (100GB)
+[2m2026-09-25T15:48:44.919038Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Set batch_size to 65535 bytes, rx_buffer to 16MB (protocol: tcp)
+[2m2026-09-25T15:48:44.919057Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Set queue sizes to 16, batching disabled, wait_before_close to 300 seconds
+[2m2026-09-25T15:48:44.919071Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Setting peer mode
+[2m2026-09-25T15:48:44.919082Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Peer mode - configuring scouting
+[2m2026-09-25T15:48:44.919096Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Peer mode, listening on tcp/[::]:7500
+[2m2026-09-25T15:48:44.919116Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m No locators, using only multicast discovery
+[2m2026-09-25T15:48:44.919127Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Opening Zenoh session with mode: "peer"
+[2m2026-09-25T15:48:44.919138Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Final config - connect endpoints: Unique([])
+[2m2026-09-25T15:48:44.919150Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Peer mode - listen endpoints: Unique([tcp/[::]:7500])
+[2m2026-09-25T15:48:44.919214Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Peer mode - multicast enabled: Some(true)
+[2m2026-09-25T15:48:44.919229Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Starting Zenoh session open...
+[2m2026-09-25T15:48:44.919286Z[0m [32m INFO[0m [2mzenoh::net::runtime[0m[2m:[0m Using ZID: 8bf1e95947df96320d5b9cee1f17724f
+[2m2026-09-25T15:48:44.920381Z[0m [32m INFO[0m [2mzenoh::net::runtime::orchestrator[0m[2m:[0m Zenoh can be reached at: tcp/[<ipv6-ula>]:7500
+[2m2026-09-25T15:48:44.920473Z[0m [32m INFO[0m [2mzenoh::net::runtime::orchestrator[0m[2m:[0m Zenoh can be reached at: tcp/[<ipv6-link-local>]:7500
+[2m2026-09-25T15:48:44.920490Z[0m [32m INFO[0m [2mzenoh::net::runtime::orchestrator[0m[2m:[0m Zenoh can be reached at: tcp/[<ipv6-link-local>]:7500
+[2m2026-09-25T15:48:44.920518Z[0m [32m INFO[0m [2mzenoh::net::runtime::orchestrator[0m[2m:[0m Zenoh can be reached at: tcp/[<ipv6-link-local>]:7500
+[2m2026-09-25T15:48:44.920552Z[0m [32m INFO[0m [2mzenoh::net::runtime::orchestrator[0m[2m:[0m Zenoh can be reached at: tcp/[<ipv6-link-local>]:7500
+[2m2026-09-25T15:48:44.920591Z[0m [32m INFO[0m [2mzenoh::net::runtime::orchestrator[0m[2m:[0m Zenoh can be reached at: tcp/[<ipv6-link-local>]:7500
+[2m2026-09-25T15:48:44.920607Z[0m [32m INFO[0m [2mzenoh::net::runtime::orchestrator[0m[2m:[0m Zenoh can be reached at: tcp/[<ipv6-link-local>]:7500
+[2m2026-09-25T15:48:44.920622Z[0m [32m INFO[0m [2mzenoh::net::runtime::orchestrator[0m[2m:[0m Zenoh can be reached at: tcp/[<ipv6-link-local>]:7500
+[2m2026-09-25T15:48:44.920637Z[0m [32m INFO[0m [2mzenoh::net::runtime::orchestrator[0m[2m:[0m Zenoh can be reached at: tcp/[<ipv6-link-local>]:7500
+[2m2026-09-25T15:48:44.920651Z[0m [32m INFO[0m [2mzenoh::net::runtime::orchestrator[0m[2m:[0m Zenoh can be reached at: tcp/[<ipv6-link-local>]:7500
+[2m2026-09-25T15:48:44.920666Z[0m [32m INFO[0m [2mzenoh::net::runtime::orchestrator[0m[2m:[0m Zenoh can be reached at: tcp/[<ipv6-link-local>]:7500
+[2m2026-09-25T15:48:44.920680Z[0m [32m INFO[0m [2mzenoh::net::runtime::orchestrator[0m[2m:[0m Zenoh can be reached at: tcp/[<ipv6-link-local>]:7500
+[2m2026-09-25T15:48:44.920695Z[0m [32m INFO[0m [2mzenoh::net::runtime::orchestrator[0m[2m:[0m Zenoh can be reached at: tcp/[<ipv6-link-local>]:7500
+[2m2026-09-25T15:48:44.920709Z[0m [32m INFO[0m [2mzenoh::net::runtime::orchestrator[0m[2m:[0m Zenoh can be reached at: tcp/[<ipv6-link-local>]:7500
+[2m2026-09-25T15:48:44.920723Z[0m [32m INFO[0m [2mzenoh::net::runtime::orchestrator[0m[2m:[0m Zenoh can be reached at: tcp/<lan-ipv4>:7500
+[2m2026-09-25T15:48:44.920843Z[0m [32m INFO[0m [2mzenoh::net::runtime::orchestrator[0m[2m:[0m zenohd listening scout messages on 224.0.0.224:7446
+[2m2026-09-25T15:48:45.423353Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Successfully connected to Zenoh network in peer mode
+[2m2026-09-25T15:48:45.423400Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Peer mode: waiting for session to stabilize...
+[2m2026-09-25T15:48:45.925077Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Worker successfully created publishing session
+[2m2026-09-25T15:48:45.925121Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Successfully sent PublishingConnected event to GUI
+[2m2026-09-25T15:48:45.925171Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Connecting monitor session on port 8500
+[2m2026-09-25T15:48:45.925188Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Attempting to connect monitor session - mode: peer, locators: (none - using discovery), monitor_port: 8500
+[2m2026-09-25T15:48:45.925224Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Monitor session: Setting peer mode with scouting DISABLED
+[2m2026-09-25T15:48:45.925239Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Monitor session: listening on tcp/[::]:8500
+[2m2026-09-25T15:48:45.925284Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Opening monitor Zenoh session...
+[2m2026-09-25T15:48:45.925330Z[0m [32m INFO[0m [2mzenoh::net::runtime[0m[2m:[0m Using ZID: 5721b258d62e207a7c67e7fc0ea2f1c4
+[2m2026-09-25T15:48:45.925895Z[0m [32m INFO[0m [2mzenoh::net::runtime::orchestrator[0m[2m:[0m Zenoh can be reached at: tcp/[<ipv6-ula>]:8500
+[2m2026-09-25T15:48:45.925913Z[0m [32m INFO[0m [2mzenoh::net::runtime::orchestrator[0m[2m:[0m Zenoh can be reached at: tcp/[<ipv6-link-local>]:8500
+[2m2026-09-25T15:48:45.925924Z[0m [32m INFO[0m [2mzenoh::net::runtime::orchestrator[0m[2m:[0m Zenoh can be reached at: tcp/[<ipv6-link-local>]:8500
+[2m2026-09-25T15:48:45.925934Z[0m [32m INFO[0m [2mzenoh::net::runtime::orchestrator[0m[2m:[0m Zenoh can be reached at: tcp/[<ipv6-link-local>]:8500
+[2m2026-09-25T15:48:45.925945Z[0m [32m INFO[0m [2mzenoh::net::runtime::orchestrator[0m[2m:[0m Zenoh can be reached at: tcp/[<ipv6-link-local>]:8500
+[2m2026-09-25T15:48:45.925955Z[0m [32m INFO[0m [2mzenoh::net::runtime::orchestrator[0m[2m:[0m Zenoh can be reached at: tcp/[<ipv6-link-local>]:8500
+[2m2026-09-25T15:48:45.925965Z[0m [32m INFO[0m [2mzenoh::net::runtime::orchestrator[0m[2m:[0m Zenoh can be reached at: tcp/[<ipv6-link-local>]:8500
+[2m2026-09-25T15:48:45.925975Z[0m [32m INFO[0m [2mzenoh::net::runtime::orchestrator[0m[2m:[0m Zenoh can be reached at: tcp/[<ipv6-link-local>]:8500
+[2m2026-09-25T15:48:45.925985Z[0m [32m INFO[0m [2mzenoh::net::runtime::orchestrator[0m[2m:[0m Zenoh can be reached at: tcp/[<ipv6-link-local>]:8500
+[2m2026-09-25T15:48:45.925995Z[0m [32m INFO[0m [2mzenoh::net::runtime::orchestrator[0m[2m:[0m Zenoh can be reached at: tcp/[<ipv6-link-local>]:8500
+[2m2026-09-25T15:48:45.926005Z[0m [32m INFO[0m [2mzenoh::net::runtime::orchestrator[0m[2m:[0m Zenoh can be reached at: tcp/[<ipv6-link-local>]:8500
+[2m2026-09-25T15:48:45.926014Z[0m [32m INFO[0m [2mzenoh::net::runtime::orchestrator[0m[2m:[0m Zenoh can be reached at: tcp/[<ipv6-link-local>]:8500
+[2m2026-09-25T15:48:45.926024Z[0m [32m INFO[0m [2mzenoh::net::runtime::orchestrator[0m[2m:[0m Zenoh can be reached at: tcp/[<ipv6-link-local>]:8500
+[2m2026-09-25T15:48:45.926034Z[0m [32m INFO[0m [2mzenoh::net::runtime::orchestrator[0m[2m:[0m Zenoh can be reached at: tcp/[<ipv6-link-local>]:8500
+[2m2026-09-25T15:48:45.926044Z[0m [32m INFO[0m [2mzenoh::net::runtime::orchestrator[0m[2m:[0m Zenoh can be reached at: tcp/<lan-ipv4>:8500
+[2m2026-09-25T15:48:45.926065Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Successfully connected monitor session in peer mode
+[2m2026-09-25T15:48:45.934368Z[0m [32m INFO[0m [2mzenoh_explorer::events[0m[2m:[0m GUI received PublishingConnected event
+[2m2026-09-25T15:48:46.177916Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Worker successfully created monitor session
+[2m2026-09-25T15:48:46.178034Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Monitor session subscribed to **
+[2m2026-09-25T15:48:46.178080Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Successfully sent MonitorConnected event to GUI
+[2m2026-09-25T15:48:46.184388Z[0m [32m INFO[0m [2mzenoh_explorer::events[0m[2m:[0m GUI received MonitorConnected event - fully connected
+[2m2026-09-25T15:48:48.974245Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Worker received command: Ping
+[2m2026-09-25T15:48:54.026790Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Worker received command: Ping
+[2m2026-09-25T15:48:59.121469Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Worker received command: Ping
+[2m2026-09-25T15:49:04.188158Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Worker received command: Ping
+[2m2026-09-25T15:49:09.253956Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Worker received command: Ping
+[2m2026-09-25T15:49:14.308188Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Worker received command: Ping
+[2m2026-09-25T15:49:19.365823Z[0m [32m INFO[0m [2mzenoh_explorer::zenoh_worker[0m[2m:[0m Worker received command: Ping

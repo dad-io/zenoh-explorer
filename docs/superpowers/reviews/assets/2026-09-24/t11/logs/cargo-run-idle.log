@@ -1,0 +1,10 @@
+# pixels_per_point=2 script= rows=0
+# rect panel_b 278.0 68.0 868.0 482.0
+# rect panel_a 12.0 68.0 262.0 482.0
+# rect source_key 98.0 157.0 248.0 209.0
+# rect header 0.0 0.0 880.0 56.0
+frame=1 t=103.3 wall=110.8 interval=- dt=103.33 cpu_prev=- effect_us=3 action=0 since_click=- since_commit=- animating=false repaint=none
+frame=2 t=182.2 wall=182.1 interval=71.33 dt=78.88 cpu_prev=164.822 effect_us=4 action=0 since_click=- since_commit=- animating=false repaint=none
+frame=3 t=209.1 wall=209.0 interval=26.93 dt=26.93 cpu_prev=1.404 effect_us=3 action=0 since_click=- since_commit=- animating=false repaint=none
+frame=4 t=213.3 wall=213.2 interval=4.12 dt=4.12 cpu_prev=0.909 effect_us=3 action=0 since_click=- since_commit=- animating=false repaint=none
+frame=5 t=215.3 wall=215.2 interval=2.00 dt=2.03 cpu_prev=0.764 effect_us=3 action=0 since_click=- since_commit=- animating=false repaint=none

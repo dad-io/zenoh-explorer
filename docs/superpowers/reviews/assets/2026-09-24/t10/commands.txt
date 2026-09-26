@@ -1,0 +1,50 @@
+T10 — egui mapping spec: how the evidence in this folder was produced (2026-09-25)
+
+Nothing under src/, Cargo.toml, .github/, assets/ or examples/ was modified. The GUI app was not launched.
+
+Sources read
+  Specimen:   /private/tmp/w2-library-frontend-f9bb8ba8-20260923/snow-white-workbench/assets/reference-ux/{result-trace.js,result-trace.css,console.css}
+              /private/tmp/w2-library-frontend-f9bb8ba8-20260923/snow-white-workbench/references/causal-motion.md
+  egui stack: ~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/{egui,epaint,ecolor,eframe,egui_glow,egui-winit}-0.29.1
+              (versions confirmed against the repo's Cargo.lock: egui/eframe/egui_glow 0.29.1, winit 0.30.13)
+  App:        src/app.rs, src/events.rs, src/types.rs, src/zenoh_worker.rs, src/ui/topic_tree.rs, src/main.rs
+
+1. egui-source-excerpts.txt
+   A shell function prints file:line-prefixed ranges from the registry sources:
+     show(){ echo "### $1"; echo "# $2/$3:$4-$5";
+             awk -v s=$4 -v e=$5 -v f="$2/$3" 'NR>=s && NR<=e {printf "%s:%d: %s\n", f, NR, $0}' "$R/$2/$3"; echo; }
+   called once per claim (47 excerpts; the ### heading of each names the claim it supports).
+
+2. app-and-dependency-excerpts.txt
+   Same awk range printer over the app files (bash, so the "file start end" specs word-split), plus:
+     grep -rn "sender.send(ZenohCommand::" src/app.rs src/ui/*.rs
+     grep -rn "animate_\|request_repaint\|animation_time\|i\.time\|CollapsingState" src/
+     grep -c NSWorkspace {winit-0.30.13,eframe-0.29.1,egui-winit-0.29.1}/Cargo.toml
+     grep -rln "reduce_motion\|reduced_motion\|ReduceMotion\|prefers-reduced\|accessibilityDisplayShouldReduceMotion" \
+          egui-0.29.1 eframe-0.29.1 egui-winit-0.29.1 epaint-0.29.1 winit-0.30.13     -> no matches
+
+3. probe/ (scratch crate, built outside the repo, copied here for review; not part of the app build)
+   Built in the session scratchpad, offline, starting from a copy of the repo's Cargo.lock:
+     cp <repo>/Cargo.lock .
+     cargo build --release --offline          # depends only on epaint = "=0.29.1"
+   Cargo pruned that copy to the probe's 29 packages (same versions: epaint/ecolor/emath 0.29.1);
+   the pruned lock the probe was built with is probe/Cargo.lock.
+     ./target/release/t10probe > probe-output.txt   # timing: 5 consecutive runs gave 259.5-262.5 us
+                                                    # (one earlier run right after a rebuild gave 586 us; discarded as warm-up noise)
+     T10_LINEAR=1 ./target/release/t10probe   # same image with Color32::from_rgba_unmultiplied
+     sips -s format png bevel-probe.ppm --out bevel-probe.png
+     sips -s format png bevel-probe-linear-premult.ppm --out bevel-probe-linear-premult.png
+   What it checks:
+     - seat(c) via Color32::lerp_to_gamma(#d6d1c2, 0.5) against the T9 Chrome hex values (5/5 match),
+       and the linear-space alternative (egui::lerp over Rgba), which does not match.
+     - sRGB vs Oklab midpoints between consecutive stops (max 0.9/255).
+     - CSS inset box-shadow profile per layer: shade(d) = alpha * Phi((offset*depth + spread - d) / (blur/2)).
+     - Ring-strip Mesh for 8 surfaces, built and tessellated with epaint 0.29.1's Tessellator; timed over
+       2000 iterations (release, one thread, this Mac). The timing covers mesh construction including the
+       per-vertex Gaussian (erf) evaluation and tessellation, not GPU upload or the rest of the app's frame.
+   bevel-probe.png is a CPU rasterisation of the probe mesh (gamma-space barycentric interpolation and
+   premultiplied ONE/ONE_MINUS_SRC_ALPHA blend, i.e. the egui_glow pipeline), 3x scale. It is a model of
+   what egui_glow would draw, not a screenshot of egui. Top row: 60x30 key, radius 6; bottom row: 60x40
+   square panel. Columns: pending depth 0.72 (orange), rest 1.0 (orange), peak 1.15 (per-side spectrum,
+   side order top,right,bottom,left = s0..s3). Face colours are drawn as square rects (the probe does not
+   round the key face), so the key's corners show face colour outside the rounded bevel.

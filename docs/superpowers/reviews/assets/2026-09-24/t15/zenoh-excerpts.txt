@@ -1,0 +1,389 @@
+# zenoh 1.7.2 excerpts relevant to T15 (paths relative to ~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/)
+
+## zenoh-keyexpr-1.7.2/src/key_expr/borrowed.rs:729-857 (error kinds, messages, validator)
+729	#[repr(i8)]
+730	enum KeyExprError {
+731	    LoneDollarStar = -1,
+732	    SingleStarAfterDoubleStar = -2,
+733	    DoubleStarAfterDoubleStar = -3,
+734	    EmptyChunk = -4,
+735	    StarInChunk = -5,
+736	    DollarAfterDollar = -6,
+737	    SharpOrQMark = -7,
+738	    UnboundDollar = -8,
+739	}
+740	
+741	impl KeyExprError {
+742	    #[cold]
+743	    fn into_err(self, s: &str) -> ZError {
+744	        let error = match &self {
+745	            Self::LoneDollarStar => anyhow!("Invalid Key Expr `{s}`: empty chunks are forbidden, as well as leading and trailing slashes"),
+746	            Self::SingleStarAfterDoubleStar => anyhow!("Invalid Key Expr `{s}`: `**/*` must be replaced by `*/**` to reach canon-form"),
+747	            Self::DoubleStarAfterDoubleStar => anyhow!("Invalid Key Expr `{s}`: `**/**` must be replaced by `**` to reach canon-form"),
+748	            Self::EmptyChunk => anyhow!("Invalid Key Expr `{s}`: empty chunks are forbidden, as well as leading and trailing slashes"),
+749	            Self::StarInChunk => anyhow!("Invalid Key Expr `{s}`: `*` may only be preceded by `/` or `$`"),
+750	            Self::DollarAfterDollar => anyhow!("Invalid Key Expr `{s}`: `$` is not allowed after `$*`"),
+751	            Self::SharpOrQMark => anyhow!("Invalid Key Expr `{s}`: `#` and `?` are forbidden characters"),
+752	            Self::UnboundDollar => anyhow!("Invalid Key Expr `{s}`: `$` is only allowed in `$*`")
+753	        };
+754	        zerror!((self) error).into()
+755	    }
+756	}
+757	
+758	impl<'a> TryFrom<&'a str> for &'a keyexpr {
+759	    type Error = ZError;
+760	
+761	    fn try_from(value: &'a str) -> Result<Self, Self::Error> {
+762	        use KeyExprError::*;
+763	        // Check for emptiness or trailing slash, as they are not caught after.
+764	        if value.is_empty() || value.ends_with('/') {
+765	            return Err(EmptyChunk.into_err(value));
+766	        }
+767	        let bytes = value.as_bytes();
+768	        // The start of the chunk, i.e. the index of the char after the '/'.
+769	        let mut chunk_start = 0;
+770	        // Use a while loop to scan the string because it requires to advance the iteration
+771	        // manually for some characters, e.g. '$'.
+772	        let mut i = 0;
+773	        while i < bytes.len() {
+774	            match bytes[i] {
+775	                // In UTF-8, all keyexpr special characters are lesser or equal to '/', except '?'
+776	                // This shortcut greatly reduce the number of operations for alphanumeric
+777	                // characters, which are the most common in keyexprs.
+778	                c if c > b'/' && c != b'?' => i += 1,
+779	                // A chunk cannot start with '/'
+780	                b'/' if i == chunk_start => return Err(EmptyChunk.into_err(value)),
+781	                // `chunk_start` is updated when starting a new chunk.
+782	                b'/' => {
+783	                    i += 1;
+784	                    chunk_start = i;
+785	                }
+786	                // The first encountered '*' must be at the beginning of a chunk
+787	                b'*' if i != chunk_start => return Err(StarInChunk.into_err(value)),
+788	                // When a '*' is match, it means this is a wildcard chunk, possibly with two "**",
+789	                // which must be followed by a '/' or the end of the string.
+790	                // So the next character is checked, and the cursor
+791	                b'*' => match bytes.get(i + 1) {
+792	                    // Break if end of string is reached.
+793	                    None => break,
+794	                    // If a '/' is found, start a new chunk, and advance the cursor to take in
+795	                    // previous check.
+796	                    Some(&b'/') => {
+797	                        i += 2;
+798	                        chunk_start = i;
+799	                    }
+800	                    // If a second '*' is found, the next character must be a slash.
+801	                    Some(&b'*') => match bytes.get(i + 2) {
+802	                        // Break if end of string is reached.
+803	                        None => break,
+804	                        // Because a "**" chunk cannot be followed by "*" or "**", the next char is
+805	                        // checked to not be a '*'.
+806	                        Some(&b'/') if matches!(bytes.get(i + 3), Some(b'*')) => {
+807	                            // If there are two consecutive wildcard chunks, raise the appropriate
+808	                            // error.
+809	                            #[cold]
+810	                            fn double_star_err(value: &str, i: usize) -> ZError {
+811	                                match (value.as_bytes().get(i + 4), value.as_bytes().get(i + 5)) {
+812	                                    (None | Some(&b'/'), _) => SingleStarAfterDoubleStar,
+813	                                    (Some(&b'*'), None | Some(&b'/')) => DoubleStarAfterDoubleStar,
+814	                                    _ => StarInChunk,
+815	                                }
+816	                                .into_err(value)
+817	                            }
+818	                            return Err(double_star_err(value, i));
+819	                        }
+820	                        // If a '/' is found, start a new chunk, and advance the cursor to take in
+821	                        // previous checks.
+822	                        Some(&b'/') => {
+823	                            i += 3;
+824	                            chunk_start = i;
+825	                        }
+826	                        // This is not a "**" chunk, raise an error.
+827	                        _ => return Err(StarInChunk.into_err(value)),
+828	                    },
+829	                    // This is not a "*" chunk, raise an error.
+830	                    _ => return Err(StarInChunk.into_err(value)),
+831	                },
+832	                // A '$' must be followed by '*'.
+833	                b'$' if bytes.get(i + 1) != Some(&b'*') => {
+834	                    return Err(UnboundDollar.into_err(value))
+835	                }
+836	                // "$*" has some additional rules to check.
+837	                b'$' => match bytes.get(i + 2) {
+838	                    // "$*" cannot be followed by '$'.
+839	                    Some(&b'$') => return Err(DollarAfterDollar.into_err(value)),
+840	                    // "$*" cannot be alone in a chunk
+841	                    Some(&b'/') | None if i == chunk_start => {
+842	                        return Err(LoneDollarStar.into_err(value))
+843	                    }
+844	                    // Break if end of string is reached.
+845	                    None => break,
+846	                    // Everything is fine, advance the cursor taking the '*' check in account.
+847	                    _ => i += 2,
+848	                },
+849	                // '#' and '?' are forbidden.
+850	                b'#' | b'?' => return Err(SharpOrQMark.into_err(value)),
+851	                // Fallback for unmatched characters
+852	                _ => i += 1,
+853	            }
+854	        }
+855	        Ok(unsafe { keyexpr::from_str_unchecked(value) })
+856	    }
+857	}
+
+## zenoh-keyexpr-1.7.2/src/key_expr/borrowed.rs:1111-1132 (upstream test table)
+    #[test_case("", EmptyChunk; "Empty")]
+    #[test_case("demo/example/test", None; "Normal key_expr")]
+    #[test_case("demo/*", None; "Single star at the end")]
+    #[test_case("demo/**", None; "Double star at the end")]
+    #[test_case("demo/*/*/test", None; "Single star after single star")]
+    #[test_case("demo/*/**/test", None; "Double star after single star")]
+    #[test_case("demo/example$*/test", None; "Dollar with star")]
+    #[test_case("demo/example$*-$*/test", None; "Multiple dollar with star")]
+    #[test_case("/demo/example/test", EmptyChunk; "Leading /")]
+    #[test_case("demo/example/test/", EmptyChunk; "Trailing /")]
+    #[test_case("demo/$*/test", LoneDollarStar; "Lone $*")]
+    #[test_case("demo/$*", LoneDollarStar; "Lone $* at the end")]
+    #[test_case("demo/example$*", None; "Trailing lone $*")]
+    #[test_case("demo/**/*/test", SingleStarAfterDoubleStar; "Single star after double star")]
+    #[test_case("demo/**/**/test", DoubleStarAfterDoubleStar; "Double star after double star")]
+    #[test_case("demo//test", EmptyChunk; "Empty Chunk")]
+    #[test_case("demo/exam*ple/test", StarInChunk; "Star in chunk")]
+    #[test_case("demo/example$*$/test", DollarAfterDollar; "Dollar after dollar or star")]
+    #[test_case("demo/example$*$*/test", DollarAfterDollar; "Dollar star after dollar or star")]
+    #[test_case("demo/example#/test", SharpOrQMark; "Contain sharp")]
+    #[test_case("demo/example?/test", SharpOrQMark; "Contain mark")]
+    #[test_case("demo/$/test", UnboundDollar; "Contain unbounded dollar")]
+
+## zenoh-1.7.2/src/api/key_expr.rs:389-409 (KeyExpr::try_from(&String) -> &str -> keyexpr, no autocanonize)
+impl<'a> TryFrom<&'a String> for KeyExpr<'a> {
+    type Error = zenoh_result::Error;
+    fn try_from(value: &'a String) -> Result<Self, Self::Error> {
+        Self::try_from(value.as_str())
+    }
+}
+impl<'a> TryFrom<&'a mut String> for KeyExpr<'a> {
+    type Error = zenoh_result::Error;
+    fn try_from(value: &'a mut String) -> Result<Self, Self::Error> {
+        Ok(Self::from(keyexpr::new(value)?))
+    }
+}
+impl<'a> TryFrom<&'a str> for KeyExpr<'a> {
+    type Error = zenoh_result::Error;
+    fn try_from(value: &'a str) -> Result<Self, Self::Error> {
+        Ok(Self(KeyExprInner::Borrowed {
+            key_expr: value.try_into()?,
+            declaration: None,
+        }))
+    }
+}
+
+## zenoh-1.7.2/src/api/session.rs:1011-1030 and 1149-1170 (put stores the conversion Result; no error at call time)
+    pub fn declare_publisher<'b, TryIntoKeyExpr>(
+        &self,
+        key_expr: TryIntoKeyExpr,
+    ) -> PublisherBuilder<'_, 'b>
+    where
+        TryIntoKeyExpr: TryInto<KeyExpr<'b>>,
+        <TryIntoKeyExpr as TryInto<KeyExpr<'b>>>::Error: Into<zenoh_result::Error>,
+    {
+        PublisherBuilder {
+            session: self,
+            key_expr: key_expr.try_into().map_err(Into::into),
+            encoding: Encoding::default(),
+            congestion_control: CongestionControl::DEFAULT,
+            priority: Priority::DEFAULT,
+            is_express: false,
+            #[cfg(feature = "unstable")]
+            reliability: Reliability::DEFAULT,
+            destination: Locality::default(),
+        }
+    }
+    pub fn put<'a, 'b: 'a, TryIntoKeyExpr, IntoZBytes>(
+        &'a self,
+        key_expr: TryIntoKeyExpr,
+        payload: IntoZBytes,
+    ) -> SessionPutBuilder<'a, 'b>
+    where
+        TryIntoKeyExpr: TryInto<KeyExpr<'b>>,
+        <TryIntoKeyExpr as TryInto<KeyExpr<'b>>>::Error: Into<zenoh_result::Error>,
+        IntoZBytes: Into<ZBytes>,
+    {
+        SessionPutBuilder {
+            publisher: self.declare_publisher(key_expr),
+            kind: PublicationBuilderPut {
+                payload: payload.into(),
+                encoding: Encoding::default(),
+            },
+            timestamp: None,
+            attachment: None,
+            #[cfg(feature = "unstable")]
+            source_info: None,
+        }
+    }
+
+## zenoh-1.7.2/src/api/builders/publisher.rs:231-252 (error surfaces at wait/await via key_expr?)
+impl Wait for PublicationBuilder<PublisherBuilder<'_, '_>, PublicationBuilderPut> {
+    #[inline]
+    fn wait(mut self) -> <Self as Resolvable>::To {
+        self.publisher = self.publisher.apply_qos_overwrites();
+        self.publisher.session.0.resolve_put(
+            &self.publisher.key_expr?,
+            self.kind.payload,
+            SampleKind::Put,
+            self.kind.encoding,
+            self.publisher.congestion_control,
+            self.publisher.priority,
+            self.publisher.is_express,
+            self.publisher.destination,
+            #[cfg(feature = "unstable")]
+            self.publisher.reliability,
+            self.timestamp,
+            #[cfg(feature = "unstable")]
+            self.source_info,
+            self.attachment,
+        )
+    }
+}
+
+## zenoh-1.7.2/src/api/session.rs:2139-2160 (resolve_put: no wildcard check)
+    pub(crate) fn resolve_put(
+        &self,
+        key_expr: &KeyExpr,
+        payload: ZBytes,
+        kind: SampleKind,
+        encoding: Encoding,
+        congestion_control: CongestionControl,
+        priority: Priority,
+        is_express: bool,
+        destination: Locality,
+        #[cfg(feature = "unstable")] reliability: Reliability,
+        timestamp: Option<uhlc::Timestamp>,
+        #[cfg(feature = "unstable")] source_info: Option<SourceInfo>,
+        attachment: Option<ZBytes>,
+    ) -> ZResult<()> {
+        trace!("write({:?}, [...])", key_expr);
+        let primitives = zread!(self.state).primitives()?;
+        let timestamp = timestamp.or_else(|| self.runtime.new_timestamp());
+        let wire_expr = key_expr.to_wire(self);
+        let ext_qos = push::ext::QoSType::new(priority.into(), congestion_control, is_express);
+        let make_body = || match kind {
+            SampleKind::Put => PushBody::Put(Put {
+
+## zenoh-1.7.2/src/api/encoding.rs:632-657 (any string is accepted as an encoding; unknown -> custom id 0xFFFF)
+impl From<&str> for Encoding {
+    fn from(t: &str) -> Self {
+        let mut inner = zenoh_protocol::core::Encoding::empty();
+
+        // Check if empty
+        if t.is_empty() {
+            return Encoding(inner);
+        }
+
+        // Everything before `;` may be mapped to a known id
+        let (id, mut schema) = t.split_once(Encoding::SCHEMA_SEP).unwrap_or((t, ""));
+        if let Some(id) = Encoding::STR_TO_ID.get(id).copied() {
+            inner.id = id;
+        // if id is not recognized, e.g. `t == "my_encoding"`, put it in the schema
+        // and set the id to CUSTOM_ENCODING_ID (0xFFFF)
+        } else {
+            inner.id = Self::CUSTOM_ENCODING_ID;
+            schema = t;
+        }
+        if !schema.is_empty() {
+            inner.schema = Some(ZSlice::from(schema.to_string().into_bytes()));
+        }
+
+        Encoding(inner)
+    }
+}
+
+# ---- Added 2026-09-25 for the coordinator's review fixes ----
+
+## zenoh-1.7.2/src/api/session.rs:1671-1689 (declare_queryable_inner: the Arc<QueryableState>, which holds the callback, is inserted into state.queryables)
+1671	    pub(crate) fn declare_queryable_inner(
+1672	        self: &Arc<Self>,
+1673	        key_expr: &KeyExpr,
+1674	        complete: bool,
+1675	        origin: Locality,
+1676	        callback: Callback<Query>,
+1677	    ) -> ZResult<Arc<QueryableState>> {
+1678	        let mut state = zwrite!(self.state);
+1679	        tracing::trace!("declare_queryable({:?})", key_expr);
+1680	        let id = self.runtime.next_id();
+1681	        let qable_state = Arc::new(QueryableState {
+1682	            id,
+1683	            key_expr: key_expr.clone().into_owned(),
+1684	            complete,
+1685	            origin,
+1686	            callback,
+1687	        });
+1688	
+1689	        state.queryables.insert(id, qable_state.clone());
+
+## zenoh-1.7.2/src/api/builders/queryable.rs:229-241 (the returned Queryable keeps only the id, not the Arc)
+229	        ke = self.session.declare_nonwild_prefix(ke)?;
+230	        session
+231	            .0
+232	            .declare_queryable_inner(&ke, self.complete, self.origin, callback)
+233	            .map(|qable_state| Queryable {
+234	                inner: QueryableInner {
+235	                    session: self.session.downgrade(),
+236	                    id: qable_state.id,
+237	                    undeclare_on_drop: true,
+238	                    key_expr: ke.into_owned(),
+239	                },
+240	                handler: receiver,
+241	            })
+
+## zenoh-1.7.2/src/api/handlers/fifo.rs:58-71 (the flume sender lives inside the callback)
+58	impl<T: CallbackParameter + Send + 'static> IntoHandler<T> for FifoChannel {
+59	    type Handler = FifoChannelHandler<T>;
+60	
+61	    fn into_handler(self) -> (Callback<T>, Self::Handler) {
+62	        let (sender, receiver) = flume::bounded(self.capacity);
+63	        (
+64	            Callback::from(move |t| {
+65	                if let Err(error) = sender.send(t) {
+66	                    tracing::error!(%error)
+67	                }
+68	            }),
+69	            FifoChannelHandler(receiver),
+70	        )
+71	    }
+
+## zenoh-1.7.2/src/api/session.rs:3080-3108 (close_inner drops state.queryables at :3103)
+3080	
+3081	#[async_trait]
+3082	impl Closee for Arc<SessionInner> {
+3083	    async fn close_inner(&self) {
+3084	        let Some(primitives) = zwrite!(self.state).primitives.take() else {
+3085	            return;
+3086	        };
+3087	
+3088	        if let Some(r) = self.runtime.static_runtime() {
+3089	            // session created by plugins never have a copy of static_runtime, so the code below will run only inside zenohd
+3090	            info!(zid = %self.zid(), "close session");
+3091	            self.task_controller.terminate_all_async().await;
+3092	            let closee = r.get_closee();
+3093	            closee.close_inner().await;
+3094	        } else {
+3095	            self.task_controller.terminate_all_async().await;
+3096	            primitives.send_close();
+3097	        }
+3098	
+3099	        // defer the cleanup of internal data structures by taking them out of the locked state
+3100	        // this is needed because callbacks may contain entities which need to acquire the
+3101	        // lock to be dropped, so callback must be dropped without the lock held
+3102	        let mut state = zwrite!(self.state);
+3103	        let _queryables = std::mem::take(&mut state.queryables);
+3104	        let _subscribers = std::mem::take(&mut state.subscribers);
+3105	        let _liveliness_subscribers = std::mem::take(&mut state.liveliness_subscribers);
+3106	        let _local_resources = std::mem::take(&mut state.local_resources);
+3107	        let _remote_resources = std::mem::take(&mut state.remote_resources);
+3108	        let _queries = std::mem::take(&mut state.queries);
+
+## zenoh-1.7.2/src/api/publisher.rs:296-350: lines containing 'unstable' (none means matching_status/matching_listener are stable)
+(end of list)
+    pub fn matching_status(&self) -> impl Resolve<ZResult<MatchingStatus>> + '_ {
+    pub fn matching_listener(&self) -> MatchingListenerBuilder<'_, DefaultHandler> {
