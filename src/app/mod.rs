@@ -1,7 +1,9 @@
 //! Application struct, construction, theme helpers, and eframe::App implementation.
 
+#[cfg(test)]
+pub(crate) mod headless;
 mod layout;
-mod theme;
+pub(crate) mod theme;
 
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::atomic::AtomicUsize;
@@ -225,6 +227,14 @@ pub struct ZenohExplorer {
     pub(crate) events_pending: bool,
     /// Keys whose Subscribe was sent and not yet answered.
     pub(crate) pending_subscribes: HashSet<String>,
+    /// The alert `ui_alert` held when it was first seen, and when; the
+    /// banner's expiry reads it (Success 6 s, Warning 10 s).
+    pub(crate) ui_alert_since: Option<(UiAlert, Instant)>,
+    /// A Help heading to scroll into view once; set by `help_link`.
+    pub(crate) help_target: Option<&'static str>,
+    /// (leaf topics whose path matches the filter, all leaf topics), computed
+    /// with the filter cache; None when not filtering.
+    pub(crate) tree_filter_counts: Option<(usize, usize)>,
 }
 
 impl ZenohExplorer {
@@ -343,6 +353,9 @@ impl ZenohExplorer {
             connect_target: String::new(),
             events_pending: false,
             pending_subscribes: HashSet::new(),
+            ui_alert_since: None,
+            help_target: None,
+            tree_filter_counts: None,
         }
     }
 }

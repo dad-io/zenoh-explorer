@@ -6,6 +6,7 @@ use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant};
 use tracing::{error, info};
 
+use crate::app::theme::icon_button;
 use crate::app::{memory_readout, peers_text, MemLevel, UiAlert, ZenohExplorer, IDLE_REPAINT_SECS};
 use crate::colors::ExplorerColors;
 use crate::transfer;
@@ -64,6 +65,46 @@ fn listen_port_error(mode: &str, listen_port: &str) -> Option<String> {
     }
 }
 
+/// How long an alert stays: Success 6 s, Warning 10 s; an Error stays until ✖.
+pub(crate) fn alert_lifetime(alert: &UiAlert) -> Option<Duration> {
+    match alert {
+        UiAlert::Success(_) => Some(Duration::from_secs(6)),
+        UiAlert::Warning(_) => Some(Duration::from_secs(10)),
+        UiAlert::Error(_) => None,
+    }
+}
+
+/// Time left before `alert` clears itself at `age` (zero once due); None for an Error.
+pub(crate) fn alert_time_left(alert: &UiAlert, age: Duration) -> Option<Duration> {
+    alert_lifetime(alert).map(|life| life.saturating_sub(age))
+}
+
+/// Why Connect is disabled, written beside it; None when it is enabled.
+fn connect_blocked_reason(
+    mode: &str,
+    address: &str,
+    port: &str,
+    listen_port: &str,
+) -> Option<&'static str> {
+    if connect_port_error(address, port).is_some() {
+        Some("Fix the Port field")
+    } else if listen_port_error(mode, listen_port).is_some() {
+        Some("Fix the Listen Port field")
+    } else {
+        None
+    }
+}
+
+/// Why Disconnect is disabled: only while a connect attempt is running.
+fn disconnect_blocked_reason(status: &ConnectionStatus) -> Option<&'static str> {
+    match status {
+        ConnectionStatus::ConnectingPublishing | ConnectionStatus::ConnectingMonitor => {
+            Some("Available once connected")
+        }
+        _ => None,
+    }
+}
+
 /// Implementation of the eframe App trait for the main application.
 /// This is called on each frame to update the UI.
 impl eframe::App for ZenohExplorer {
@@ -75,9 +116,18 @@ impl eframe::App for ZenohExplorer {
             ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
             ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
         });
+        self.frame_ui(ctx);
+    }
+}
 
+impl ZenohExplorer {
+    /// One frame of the whole window. Tests call this directly: eframe 0.29's
+    /// `Frame` cannot be constructed outside eframe.
+    pub(crate) fn frame_ui(&mut self, ctx: &egui::Context) {
         // Process any pending events from the Zenoh worker
         self.process_events();
+        // Success and Warning alerts leave on their own; wake the UI for it
+        self.expire_alert(ctx, Instant::now());
         // The per-frame budget left events queued: come back right away
         if self.events_pending {
             ctx.request_repaint();
@@ -111,7 +161,7 @@ impl eframe::App for ZenohExplorer {
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         // Dark mode toggle
                         if ui
-                            .button(if self.dark_mode { "☀" } else { "🌙" })
+                            .add(icon_button(if self.dark_mode { "☀" } else { "🌙" }))
                             .clicked()
                         {
                             self.dark_mode = !self.dark_mode;
@@ -403,8 +453,13 @@ impl eframe::App for ZenohExplorer {
                             }
                         }
 
-                        if let ConnectionStatus::Error(ref err) = self.connection_status {
-                            ui.colored_label(ExplorerColors::ERROR, format!("Error: {}", err));
+                        let error_text = match &self.connection_status {
+                            ConnectionStatus::Error(err) => Some(format!("Error: {}", err)),
+                            _ => None,
+                        };
+                        if let Some(error_text) = error_text {
+                            ui.colored_label(ExplorerColors::ERROR, error_text);
+                            self.help_link(ui, crate::ui::help::section::TROUBLESHOOTING);
                         }
 
                         let kept = self.subscriptions.len();
@@ -421,15 +476,28 @@ impl eframe::App for ZenohExplorer {
                             );
                         }
 
-                        let ports_ok =
-                            connect_port_error(&self.connect_address, &self.connect_port)
-                                .is_none()
-                                && listen_port_error(&self.connection_mode, &self.listen_port)
-                                    .is_none();
-                        if ui
-                            .add_enabled(ports_ok, egui::Button::new("Connect"))
-                            .clicked()
-                        {
+                        let blocked = connect_blocked_reason(
+                            &self.connection_mode,
+                            &self.connect_address,
+                            &self.connect_port,
+                            &self.listen_port,
+                        );
+                        let clicked = ui
+                            .horizontal(|ui| {
+                                let clicked = ui
+                                    .add_enabled(blocked.is_none(), egui::Button::new("Connect"))
+                                    .clicked();
+                                if let Some(reason) = blocked {
+                                    ui.label(
+                                        RichText::new(reason)
+                                            .size(TEXT_SMALL_SIZE)
+                                            .color(self.text_secondary_color()),
+                                    );
+                                }
+                                clicked
+                            })
+                            .inner;
+                        if clicked {
                             if let Some(sender) = &self.command_sender {
                                 let locators = form_locators(
                                     &self.connect_transport,
@@ -492,40 +560,20 @@ impl eframe::App for ZenohExplorer {
                                 let _ = sender.send(ZenohCommand::Disconnect);
                             }
                         }
+                        if let Some(reason) = disconnect_blocked_reason(&self.connection_status) {
+                            ui.label(
+                                RichText::new(reason)
+                                    .size(TEXT_SMALL_SIZE)
+                                    .color(self.text_secondary_color()),
+                            );
+                        }
                     });
                 }
 
                 ui.separator();
 
                 // Global alert banner (export errors, warnings) — visible on every tab
-                if let Some(alert) = self.ui_alert.clone() {
-                    egui::TopBottomPanel::top("alert_banner").show_inside(ui, |ui| {
-                        ui.horizontal(|ui| {
-                            let (text, color) = match &alert {
-                                UiAlert::Success(_) => (
-                                    alert.text().to_string(),
-                                    if self.dark_mode {
-                                        ExplorerColors::DARK_SUCCESS
-                                    } else {
-                                        ExplorerColors::SUCCESS
-                                    },
-                                ),
-                                UiAlert::Warning(_) => (
-                                    format!("Warning: {}", alert.text()),
-                                    ExplorerColors::WARNING,
-                                ),
-                                UiAlert::Error(_) => (
-                                    format!("Error: {}", alert.text()),
-                                    ExplorerColors::ERROR,
-                                ),
-                            };
-                            ui.label(RichText::new(text).color(color));
-                            if ui.small_button("✖").clicked() {
-                                self.ui_alert = None;
-                            }
-                        });
-                    });
-                }
+                self.show_alert_banner(ui);
 
                 // Main split-panel layout
                 egui::TopBottomPanel::top("toolbar").show_inside(ui, |ui| {
@@ -589,6 +637,69 @@ impl eframe::App for ZenohExplorer {
         // only keeps time-based readouts (health, elapsed times) current
         ctx.request_repaint_after(std::time::Duration::from_secs(IDLE_REPAINT_SECS));
     }
+
+    /// Shows `alert` with a fresh timer, even when the same alert is showing.
+    pub(crate) fn raise_alert(&mut self, alert: UiAlert) {
+        self.ui_alert = Some(alert);
+        // expire_alert stamps it this frame; comparing values alone would
+        // keep the old stamp for an identical alert
+        self.ui_alert_since = None;
+    }
+
+    /// Remembers when the current alert appeared (a changed value also counts,
+    /// for any path that sets `ui_alert` directly), clears a Success or Warning
+    /// whose time is up, and otherwise asks egui to wake the UI when it will
+    /// be, so the banner leaves without input (P1 repaints on events only).
+    fn expire_alert(&mut self, ctx: &egui::Context, now: Instant) {
+        let seen = self.ui_alert_since.as_ref().map(|(a, _)| a);
+        if self.ui_alert.as_ref() != seen {
+            self.ui_alert_since = self.ui_alert.clone().map(|a| (a, now));
+        }
+        let (Some(alert), Some((_, since))) = (&self.ui_alert, &self.ui_alert_since) else {
+            return;
+        };
+        let left = alert_time_left(alert, now.saturating_duration_since(*since));
+        match left {
+            Some(left) if left.is_zero() => {
+                self.ui_alert = None;
+                self.ui_alert_since = None;
+            }
+            Some(left) => ctx.request_repaint_after(left),
+            None => {}
+        }
+    }
+
+    /// The banner for `ui_alert`; ✖ dismisses it (the only way for an Error).
+    fn show_alert_banner(&mut self, ui: &mut egui::Ui) {
+        let Some(alert) = self.ui_alert.clone() else {
+            return;
+        };
+        egui::TopBottomPanel::top("alert_banner").show_inside(ui, |ui| {
+            ui.horizontal(|ui| {
+                let (text, color) = match &alert {
+                    UiAlert::Success(_) => (
+                        alert.text().to_string(),
+                        if self.dark_mode {
+                            ExplorerColors::DARK_SUCCESS
+                        } else {
+                            ExplorerColors::SUCCESS
+                        },
+                    ),
+                    UiAlert::Warning(_) => (
+                        format!("Warning: {}", alert.text()),
+                        ExplorerColors::WARNING,
+                    ),
+                    UiAlert::Error(_) => {
+                        (format!("Error: {}", alert.text()), ExplorerColors::ERROR)
+                    }
+                };
+                ui.label(RichText::new(text).color(color));
+                if ui.add(icon_button("✖")).on_hover_text("Dismiss").clicked() {
+                    self.ui_alert = None;
+                }
+            });
+        });
+    }
 }
 
 #[cfg(test)]
@@ -630,5 +741,264 @@ mod tests {
             None,
             "Port is unused without an address"
         );
+    }
+
+    use crate::app::headless::{click_events, node, nodes, repaint_delay, text, Headless, WIDE};
+    use crate::app::theme::MIN_TARGET;
+    use crate::ui::help::section;
+
+    fn frame(h: &Headless, app: &mut ZenohExplorer) -> egui::FullOutput {
+        h.run(Vec::new(), |ctx| app.frame_ui(ctx))
+    }
+
+    fn ago(d: Duration) -> Instant {
+        Instant::now().checked_sub(d).expect(
+            "test ages must stay under a minute: on Windows, Instant counts from boot and CI machines may be freshly booted",
+        )
+    }
+
+    #[test]
+    fn alert_expiry_rules() {
+        let s = Duration::from_secs;
+        let left = |a: UiAlert, age| alert_time_left(&a, s(age));
+        assert_eq!(left(UiAlert::Success("x".into()), 5), Some(s(1)));
+        assert_eq!(left(UiAlert::Success("x".into()), 6), Some(Duration::ZERO));
+        assert_eq!(left(UiAlert::Warning("x".into()), 9), Some(s(1)));
+        assert_eq!(left(UiAlert::Warning("x".into()), 10), Some(Duration::ZERO));
+        assert_eq!(
+            left(UiAlert::Error("x".into()), 3600),
+            None,
+            "errors stay until ✖"
+        );
+    }
+
+    #[test]
+    fn expiry_wakes_the_ui_when_due() {
+        let (mut app, _tx) = ZenohExplorer::test_app();
+        let ctx = egui::Context::default();
+        let _ = ctx.run(egui::RawInput::default(), |_| {}); // settle egui's start-up repaint
+        let now = Instant::now();
+        let ok = UiAlert::Success("ok".into());
+        app.ui_alert = Some(ok.clone());
+        app.ui_alert_since = Some((ok, now - Duration::from_millis(5_500)));
+        let out = ctx.run(egui::RawInput::default(), |ctx| app.expire_alert(ctx, now));
+        let d = repaint_delay(&out);
+        assert!(
+            d <= Duration::from_millis(500) && d >= Duration::from_millis(450),
+            "woken when the 6 s are up, not at the 1 s idle tick: {d:?}"
+        );
+        app.ui_alert = Some(UiAlert::Error("e".into()));
+        let out = ctx.run(egui::RawInput::default(), |ctx| app.expire_alert(ctx, now));
+        assert!(
+            repaint_delay(&out) > Duration::from_secs(3600),
+            "an Error schedules nothing"
+        );
+    }
+
+    #[test]
+    fn re_raising_the_same_alert_restarts_its_timer() {
+        let (mut app, _tx) = ZenohExplorer::test_app();
+        let ctx = egui::Context::default();
+        let ms = Duration::from_millis;
+        let t0 = ago(Duration::from_secs(20));
+        let saved = UiAlert::Success("Saved to /tmp/x".into());
+        let expire_at = |app: &mut ZenohExplorer, t: Instant| {
+            let _ = ctx.run(egui::RawInput::default(), |ctx| app.expire_alert(ctx, t));
+        };
+        app.raise_alert(saved.clone());
+        expire_at(&mut app, t0);
+        expire_at(&mut app, t0 + ms(5_900));
+        assert_eq!(app.ui_alert, Some(saved.clone()), "still up at 5.9 s");
+        // The same topic saved to the same path again
+        app.raise_alert(saved.clone());
+        expire_at(&mut app, t0 + ms(5_900));
+        expire_at(&mut app, t0 + ms(6_500));
+        assert_eq!(
+            app.ui_alert,
+            Some(saved.clone()),
+            "the second Saved alert gets its own 6 s"
+        );
+        expire_at(&mut app, t0 + ms(5_900 + 6_000));
+        assert!(app.ui_alert.is_none(), "gone 6 s after the re-raise");
+    }
+
+    #[test]
+    fn alerts_clear_themselves_in_the_frame() {
+        let (mut app, _tx) = ZenohExplorer::test_app();
+        let h = Headless::new(WIDE);
+        let saved = UiAlert::Success("Saved to /tmp/x".into());
+        app.ui_alert = Some(saved.clone());
+        let out = frame(&h, &mut app);
+        assert!(text(&out, "Saved to /tmp/x").is_some());
+        app.ui_alert_since = Some((saved.clone(), ago(Duration::from_secs(6))));
+        let out = frame(&h, &mut app);
+        assert!(app.ui_alert.is_none(), "a Success leaves after 6 s");
+        assert!(text(&out, "Saved to /tmp/x").is_none());
+
+        let warn = UiAlert::Warning("w".into());
+        app.ui_alert = Some(warn.clone());
+        app.ui_alert_since = Some((warn.clone(), ago(Duration::from_secs(9))));
+        let _ = frame(&h, &mut app);
+        assert!(app.ui_alert.is_some(), "a Warning stays 10 s");
+        app.ui_alert_since = Some((warn.clone(), ago(Duration::from_secs(10))));
+        let _ = frame(&h, &mut app);
+        assert!(app.ui_alert.is_none(), "a Warning leaves after 10 s");
+
+        // A new alert replacing an old one restarts the clock.
+        app.ui_alert = Some(UiAlert::Success("new".into()));
+        app.ui_alert_since = Some((saved, ago(Duration::from_secs(30))));
+        let out = frame(&h, &mut app);
+        assert!(
+            text(&out, "new").is_some(),
+            "the old timestamp does not apply"
+        );
+
+        let err = UiAlert::Error("e".into());
+        app.ui_alert = Some(err.clone());
+        app.ui_alert_since = Some((err, ago(Duration::from_secs(30))));
+        let out = frame(&h, &mut app);
+        assert!(text(&out, "Error: e").is_some(), "an Error stays until ✖");
+    }
+
+    #[test]
+    fn alert_dismiss_is_24_square_and_clears() {
+        let (mut app, _tx) = ZenohExplorer::test_app();
+        let h = Headless::new(WIDE);
+        app.ui_alert = Some(UiAlert::Error("x".into()));
+        let _ = frame(&h, &mut app);
+        let out = frame(&h, &mut app);
+        let row = text(&out, "Error: x").expect("banner").rect;
+        let dismiss = nodes(&out)
+            .into_iter()
+            .find(|n| {
+                n.name == "✖" && n.rect.min.y <= row.center().y && row.center().y <= n.rect.max.y
+            })
+            .expect("✖ beside the banner text");
+        assert!(
+            dismiss.rect.width() >= MIN_TARGET && dismiss.rect.height() >= MIN_TARGET,
+            "{:?}",
+            dismiss.rect
+        );
+        let (press, release) = click_events(dismiss.rect.center());
+        let _ = h.run(press, |ctx| app.frame_ui(ctx));
+        let _ = h.run(release, |ctx| app.frame_ui(ctx));
+        assert!(app.ui_alert.is_none());
+    }
+
+    #[test]
+    fn header_tabs_banner_and_connect_are_at_least_24() {
+        let (mut app, _tx) = ZenohExplorer::test_app();
+        let h = Headless::new(WIDE);
+        let _ = frame(&h, &mut app);
+        let out = frame(&h, &mut app);
+        let n = |name: &str| node(&out, name).unwrap_or_else(|| panic!("{name} is on screen"));
+        let theme = n("☀"); // dark mode is the default (src/app/mod.rs:305)
+        assert!(
+            theme.rect.width() >= MIN_TARGET && theme.rect.height() >= MIN_TARGET,
+            "theme toggle {:?}",
+            theme.rect
+        );
+        for name in ["📊 Topics", "📤 Publish", "🔍 Query", "❓ Help", "Connect"] {
+            assert!(
+                n(name).rect.height() >= MIN_TARGET,
+                "{name} {:?}",
+                n(name).rect
+            );
+        }
+        app.connection_status = ConnectionStatus::Connected;
+        let out = frame(&h, &mut app);
+        let d = node(&out, "Disconnect").expect("Disconnect");
+        assert!(d.rect.height() >= MIN_TARGET, "{:?}", d.rect);
+    }
+
+    #[test]
+    fn connect_blocked_reason_rules() {
+        assert_eq!(
+            connect_blocked_reason("client", "localhost", "7447", "7448"),
+            None
+        );
+        assert_eq!(
+            connect_blocked_reason("client", "localhost", "abc", "7448"),
+            Some("Fix the Port field")
+        );
+        assert_eq!(
+            connect_blocked_reason("client", "", "abc", "7448"),
+            None,
+            "Port is unused without an address"
+        );
+        assert_eq!(
+            connect_blocked_reason("peer", "", "7447", "80"),
+            Some("Fix the Listen Port field")
+        );
+        assert_eq!(
+            disconnect_blocked_reason(&ConnectionStatus::ConnectingMonitor),
+            Some("Available once connected")
+        );
+        assert_eq!(
+            disconnect_blocked_reason(&ConnectionStatus::Connected),
+            None
+        );
+    }
+
+    #[test]
+    fn connect_reasons_are_visible() {
+        let (mut app, _tx) = ZenohExplorer::test_app();
+        let h = Headless::new(WIDE);
+        app.connect_address = "localhost".into();
+        app.connect_port = "abc".into();
+        let out = frame(&h, &mut app);
+        let reason = text(&out, "Fix the Port field").expect("reason beside Connect");
+        let connect = node(&out, "Connect").expect("Connect");
+        assert!(
+            reason.rect.left() >= connect.rect.right(),
+            "right of the button"
+        );
+        assert!((reason.rect.center().y - connect.rect.center().y).abs() < MIN_TARGET / 2.0);
+        app.connection_status = ConnectionStatus::ConnectingPublishing;
+        let out = frame(&h, &mut app);
+        assert!(text(&out, "Available once connected").is_some());
+    }
+
+    #[test]
+    fn connection_error_links_troubleshooting() {
+        let (mut app, _tx) = ZenohExplorer::test_app();
+        // 700 pt tall: the Help view's Troubleshooting heading starts below the fold
+        let h = Headless::new(egui::vec2(WIDE.x, 700.0));
+        app.connection_status = ConnectionStatus::Error("boom".into());
+        app.detail_view = DetailView::Help;
+        let out = frame(&h, &mut app);
+        assert!(
+            text(&out, section::TROUBLESHOOTING).is_none(),
+            "precondition: Troubleshooting is below the fold"
+        );
+        app.detail_view = DetailView::TopicDetails;
+        let out = frame(&h, &mut app);
+        // after the merge the frame has other "More in Help" links (empty
+        // tree, Limits row) and `nodes` comes from a hash map, so pick the
+        // one nearest below the error text
+        let err = text(&out, "Error: boom").expect("error text").rect;
+        let link = nodes(&out)
+            .into_iter()
+            .filter(|n| n.name == "More in Help" && n.rect.top() >= err.bottom() - 1.0)
+            .min_by(|a, b| a.rect.top().total_cmp(&b.rect.top()))
+            .expect("link under the error");
+        assert!(
+            link.rect.top() - err.bottom() < MIN_TARGET,
+            "directly under the error"
+        );
+        assert!(
+            (link.rect.left() - err.left()).abs() < MIN_TARGET,
+            "in the connection panel, not another view"
+        );
+        let (press, release) = click_events(link.rect.center());
+        let _ = h.run(press, |ctx| app.frame_ui(ctx));
+        let _ = h.run(release, |ctx| app.frame_ui(ctx));
+        assert_eq!(app.detail_view, DetailView::Help);
+        // The link is drawn before the Help view, so Help scrolls to the target
+        // and clears `help_target` in the click frame: check the scroll instead.
+        assert_eq!(app.help_target, None, "consumed by the Help view");
+        let out = frame(&h, &mut app);
+        let heading = text(&out, section::TROUBLESHOOTING).expect("its own section in view");
+        assert!(heading.rect.max.y <= 700.0, "{:?}", heading.rect);
     }
 }

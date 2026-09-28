@@ -164,7 +164,7 @@ The maximum width is seven agents, in T1. T2 is serial because every stage edits
 2. **Start and base.** Start T1 on the board once. Then:
 
    ```bash
-   P2RUN="${TMPDIR:-/tmp}/p2run"
+   P2RUN=${TMPDIR:-/tmp}/p2run
    BASE=$(git rev-parse HEAD)   # c5cdb1a plus any board-only commits; record it in the evidence
    mkdir -p "$P2RUN"
    ```
@@ -231,7 +231,7 @@ The maximum width is seven agents, in T1. T2 is serial because every stage edits
 
 No part calls or reads a file another part changes during the parallel phase: parts d, e and f produce inputs only for T2; part b reads `rust-version`, which part f does not touch; part g documents the asset names fixed in Global Constraints. The couplings the pre-flight did find (hard-coded `target/` paths, shared rustup state, the old `release.yml` under whole-directory linting, fixed test ports) are handled above and listed as N2–N4.
 
-**How T2 runs.** One agent, in the main checkout on the task branch, after T1 is complete. `export P2RUN="${TMPDIR:-/tmp}/p2run" CARGO_TARGET_DIR="$P2RUN/tgt-int"` (T1's integration directory, which already holds the release build with the new profile). Before stage 4, read the dSYM path part f recorded: `git log --grep '^build(profile)' --format=%B -n1`. Stages 1, 2, 3 and 4 run in order; each ends with actionlint and zizmor on `release.yml` and its own commit. Stage 5 then runs the whole-repository verification. Its fix-ups go into the file that caused them, in a separate commit naming the part or stage that owns it. Complete T2 on the board with each stage's check output and stage 5's full output as evidence; the GitHub-only checklist is recorded as not run, never as passed.
+**How T2 runs.** One agent, in the main checkout on the task branch, after T1 is complete. `export P2RUN=${TMPDIR:-/tmp}/p2run CARGO_TARGET_DIR="$P2RUN/tgt-int"` (T1's integration directory, which already holds the release build with the new profile). Before stage 4, read the dSYM path part f recorded: `git log --grep '^build(profile)' --format=%B -n1`. Stages 1, 2, 3 and 4 run in order; each ends with actionlint and zizmor on `release.yml` and its own commit. Stage 5 then runs the whole-repository verification. Its fix-ups go into the file that caused them, in a separate commit naming the part or stage that owns it. Complete T2 on the board with each stage's check output and stage 5's full output as evidence; the GitHub-only checklist is recorded as not run, never as passed.
 
 **Not runnable locally, and the local substitute:**
 

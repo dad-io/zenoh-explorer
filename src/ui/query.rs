@@ -18,6 +18,7 @@ impl QueryUI for ZenohExplorer {
         // Say why the Query button is disabled, in neutral text
         if let Some(notice) = connection_notice(&self.connection_status) {
             ui.label(RichText::new(notice).color(self.text_secondary_color()));
+            self.help_link(ui, crate::ui::help::section::TROUBLESHOOTING);
             ui.separator();
         }
 
@@ -68,6 +69,7 @@ impl QueryUI for ZenohExplorer {
             let selector_err = crate::validation::selector_error(&self.query_selector);
             if let Some(err) = &selector_err {
                 ui.colored_label(ExplorerColors::ERROR, err);
+                self.help_link(ui, crate::ui::help::section::KEY_EXPRESSIONS);
             }
             ui.horizontal(|ui| {
                 ui.label("Value (optional):");
@@ -82,16 +84,27 @@ impl QueryUI for ZenohExplorer {
                 ui.colored_label(ExplorerColors::ERROR, err);
             }
             // Query button - only enabled when connected and the inputs are valid
-            let button = egui::Button::new("Query");
-            if ui
-                .add_enabled(
-                    matches!(self.connection_status, ConnectionStatus::Connected)
-                        && selector_err.is_none()
-                        && timeout_err.is_none(),
-                    button,
-                )
-                .clicked()
-            {
+            let blocked = query_blocked_reason(
+                matches!(self.connection_status, ConnectionStatus::Connected),
+                selector_err.is_some(),
+                timeout_err.is_some(),
+            );
+            let clicked = ui
+                .horizontal(|ui| {
+                    let clicked = ui
+                        .add_enabled(blocked.is_none(), egui::Button::new("Query"))
+                        .clicked();
+                    if let Some(reason) = blocked {
+                        ui.label(
+                            RichText::new(reason)
+                                .size(TEXT_SMALL_SIZE)
+                                .color(self.text_secondary_color()),
+                        );
+                    }
+                    clicked
+                })
+                .inner;
+            if clicked {
                 if let Some(sender) = &self.command_sender {
                     let timeout = self.query_timeout.trim().parse().expect("validated");
                     let _ = sender.send(ZenohCommand::Query {
@@ -225,6 +238,23 @@ pub(crate) fn connection_notice(status: &ConnectionStatus) -> Option<&'static st
     }
 }
 
+/// Why Query is disabled, written beside it; None when it is enabled.
+fn query_blocked_reason(
+    connected: bool,
+    selector_invalid: bool,
+    timeout_invalid: bool,
+) -> Option<&'static str> {
+    if !connected {
+        Some("Connect first")
+    } else if selector_invalid {
+        Some("Fix the selector above")
+    } else if timeout_invalid {
+        Some("Fix the timeout above")
+    } else {
+        None
+    }
+}
+
 /// One line saying what this app's own queryable answers.
 fn queryable_summary(enabled: bool, pattern: &str, stored: usize) -> String {
     if !enabled {
@@ -311,5 +341,52 @@ mod tests {
             0,
             "an invalid pattern serves nothing"
         );
+    }
+
+    use crate::app::headless::{node, text, Headless, WIDE};
+    use crate::app::theme::MIN_TARGET;
+    use crate::ui::help::section;
+
+    fn query_panel(a: &mut ZenohExplorer, ui: &mut egui::Ui) {
+        a.show_query_tab(ui)
+    }
+
+    #[test]
+    fn query_blocked_reason_rules() {
+        assert_eq!(
+            query_blocked_reason(false, false, false),
+            Some("Connect first")
+        );
+        assert_eq!(
+            query_blocked_reason(true, true, true),
+            Some("Fix the selector above")
+        );
+        assert_eq!(
+            query_blocked_reason(true, false, true),
+            Some("Fix the timeout above")
+        );
+        assert_eq!(query_blocked_reason(true, false, false), None);
+    }
+
+    #[test]
+    fn query_reason_and_links_are_visible() {
+        let (mut app, _tx) = ZenohExplorer::test_app();
+        let h = Headless::new(WIDE);
+        let out = h.panel(&mut app, vec![], query_panel);
+        let query = node(&out, "Query").expect("Query button");
+        let reason = text(&out, "Connect first").expect("reason beside Query");
+        assert!(reason.rect.left() >= query.rect.right());
+        assert!(query.rect.height() >= MIN_TARGET, "{:?}", query.rect);
+        let link = node(&out, "More in Help").expect("the notice links Troubleshooting");
+        let _ = h.click_panel(&mut app, link.rect.center(), query_panel);
+        assert_eq!(app.detail_view, DetailView::Help);
+        assert_eq!(app.help_target, Some(section::TROUBLESHOOTING));
+        app.connection_status = ConnectionStatus::Connected;
+        app.query_selector = "demo//x".into();
+        let out = h.panel(&mut app, vec![], query_panel);
+        assert!(text(&out, "Fix the selector above").is_some());
+        let link = node(&out, "More in Help").expect("the selector error links Key expressions");
+        let _ = h.click_panel(&mut app, link.rect.center(), query_panel);
+        assert_eq!(app.help_target, Some(section::KEY_EXPRESSIONS));
     }
 }

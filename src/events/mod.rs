@@ -151,7 +151,7 @@ impl ZenohExplorer {
                         FailedOp::Subscribe => self.pending_subscribes.clear(),
                         FailedOp::Monitor => self.monitor_ok = false,
                     }
-                    self.ui_alert = Some(UiAlert::Error(msg));
+                    self.raise_alert(UiAlert::Error(msg));
                 }
                 ZenohEvent::Published { key, bytes } => {
                     self.publish_status = Some(PublishStatus::Published {

@@ -208,6 +208,47 @@ pub fn compute_visible_paths(
     out
 }
 
+/// (leaf topics whose path matches, all leaf topics) for "n of m topics".
+pub fn count_filter_matches(root: &ZenohNode, filter_lower: &str) -> (usize, usize) {
+    fn walk(node: &ZenohNode, path: &str, filter: &str, out: &mut (usize, usize)) {
+        if node.children.is_empty() {
+            out.1 += 1;
+            if path.to_lowercase().contains(filter) {
+                out.0 += 1;
+            }
+        }
+        for (key, child) in &node.children {
+            walk(child, &format!("{path}/{key}"), filter, out);
+        }
+    }
+    let mut out = (0, 0);
+    for (key, child) in &root.children {
+        walk(child, key, filter_lower, &mut out);
+    }
+    out
+}
+
+/// The byte range of `key` that matches `filter_lower`, ignoring case, on
+/// char boundaries.
+pub fn match_range(key: &str, filter_lower: &str) -> Option<std::ops::Range<usize>> {
+    if filter_lower.is_empty() {
+        return None;
+    }
+    for (start, _) in key.char_indices() {
+        let mut lowered = String::new();
+        for (i, c) in key[start..].char_indices() {
+            lowered.extend(c.to_lowercase());
+            if lowered == filter_lower {
+                return Some(start..start + i + c.len_utf8());
+            }
+            if !filter_lower.starts_with(lowered.as_str()) {
+                break;
+            }
+        }
+    }
+    None
+}
+
 /// Minimum interval between filter recomputations while data streams in.
 pub const FILTER_RECOMPUTE_INTERVAL: Duration = Duration::from_millis(250);
 
@@ -417,5 +458,25 @@ mod tests {
             filter_repaint_after(Some(("a", 1, t0)), "b", 2, t0 + ms(100)),
             None
         );
+    }
+
+    #[test]
+    fn filter_counts_leaf_topics() {
+        let mut root = ZenohNode::new("root".into());
+        for p in ["a/x", "a/y", "b/x"] {
+            root.insert_path(p);
+        }
+        assert_eq!(count_filter_matches(&root, "x"), (2, 3));
+        assert_eq!(count_filter_matches(&root, "a"), (2, 3));
+        assert_eq!(count_filter_matches(&root, ""), (3, 3));
+    }
+
+    #[test]
+    fn match_range_is_case_insensitive_and_char_safe() {
+        assert_eq!(match_range("Temp1", "te"), Some(0..2));
+        assert_eq!(match_range("Temp1", "p1"), Some(3..5));
+        assert_eq!(match_range("Straße", "aße"), Some(3..7));
+        assert_eq!(match_range("Temp1", "zz"), None);
+        assert_eq!(match_range("Temp1", ""), None);
     }
 }

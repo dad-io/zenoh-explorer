@@ -4,6 +4,7 @@ use egui::RichText;
 use std::sync::Arc;
 use std::time::Instant;
 
+use crate::app::theme::icon_button;
 use crate::app::{UiAlert, ZenohExplorer};
 use crate::colors::ExplorerColors;
 use crate::transfer;
@@ -142,6 +143,37 @@ fn render_transfer_progress(
     }
 }
 
+/// The row label "{icon} {key}". While filtering, the part of `key` that
+/// matches is drawn on the selection colour and underlined, so it still shows
+/// on a selected row (whose fill is the same colour) and not by colour alone.
+fn row_label(
+    ui: &egui::Ui,
+    icon: &str,
+    key: &str,
+    filter_lower: &str,
+    underline: egui::Color32,
+) -> egui::WidgetText {
+    let Some(r) = match_range(key, filter_lower) else {
+        return format!("{icon} {key}").into();
+    };
+    let plain = egui::TextFormat {
+        font_id: egui::TextStyle::Button.resolve(ui.style()),
+        // PLACEHOLDER takes the widget's own text colour, as a plain String does
+        color: egui::Color32::PLACEHOLDER,
+        ..Default::default()
+    };
+    let hit = egui::TextFormat {
+        background: ui.visuals().selection.bg_fill,
+        underline: egui::Stroke::new(1.0, underline),
+        ..plain.clone()
+    };
+    let mut job = egui::text::LayoutJob::default();
+    job.append(&format!("{icon} {}", &key[..r.start]), 0.0, plain.clone());
+    job.append(&key[r.clone()], 0.0, hit);
+    job.append(&key[r.end..], 0.0, plain);
+    job.into()
+}
+
 /// Trait for topic tree and detail rendering.
 pub trait TopicTreeUI {
     fn show_tree_panel(&mut self, ui: &mut egui::Ui);
@@ -167,8 +199,21 @@ impl TopicTreeUI for ZenohExplorer {
                 ui.label("🔍");
                 ui.text_edit_singleline(&mut self.tree_filter)
                     .on_hover_text("Filter topics");
-                if ui.button("✖").clicked() {
+                if ui
+                    .add(icon_button("✖"))
+                    .on_hover_text("Clear filter")
+                    .clicked()
+                {
                     self.tree_filter.clear();
+                }
+                if !self.tree_filter.is_empty() {
+                    if let Some((n, m)) = self.tree_filter_counts {
+                        ui.label(
+                            RichText::new(filter_count_text(n, m))
+                                .size(TEXT_SMALL_SIZE)
+                                .color(self.text_secondary_color()),
+                        );
+                    }
                 }
             });
 
@@ -188,9 +233,25 @@ impl TopicTreeUI for ZenohExplorer {
                 let key_err = crate::validation::key_expr_error(&self.subscribe_key);
                 if let Some(err) = &key_err {
                     ui.colored_label(ExplorerColors::ERROR, err);
+                    self.help_link(ui, crate::ui::help::section::KEY_EXPRESSIONS);
                 }
-                let button = egui::Button::new("Subscribe");
-                if ui.add_enabled(self.subscribe_enabled(), button).clicked() {
+                let clicked = ui
+                    .horizontal(|ui| {
+                        let clicked = ui
+                            .add_enabled(self.subscribe_enabled(), egui::Button::new("Subscribe"))
+                            .clicked();
+                        // The reason sits beside the button, not only in a hover (F-T7-3)
+                        if let Some(reason) = self.subscribe_blocked_reason() {
+                            ui.label(
+                                RichText::new(reason)
+                                    .size(TEXT_SMALL_SIZE)
+                                    .color(self.text_secondary_color()),
+                            );
+                        }
+                        clicked
+                    })
+                    .inner;
+                if clicked {
                     if let Some(sender) = &self.command_sender {
                         let _ = sender.send(ZenohCommand::Subscribe {
                             key_expr: self.subscribe_key.clone(),
@@ -210,7 +271,11 @@ impl TopicTreeUI for ZenohExplorer {
                             ui.label(
                                 RichText::new(&subscription.key_expr).size(SUBSCRIPTION_TEXT_SIZE),
                             );
-                            if ui.small_button("✖").clicked() {
+                            if ui
+                                .add(icon_button("✖"))
+                                .on_hover_text("Unsubscribe")
+                                .clicked()
+                            {
                                 if let Some(sender) = &self.command_sender {
                                     let _ = sender.send(ZenohCommand::Unsubscribe {
                                         subscription_id: subscription.id.clone(),
@@ -255,6 +320,12 @@ impl TopicTreeUI for ZenohExplorer {
                     let visible = compute_visible_paths(tree, &filter_lower);
                     self.tree_filter_cache =
                         Some((filter_lower.clone(), self.tree_version, now, visible));
+                    let counts = count_filter_matches(tree, &filter_lower);
+                    if self.tree_filter_counts != Some(counts) {
+                        self.tree_filter_counts = Some(counts);
+                        // the count row was drawn above with the old value
+                        ui.ctx().request_repaint();
+                    }
                 }
                 // K4: a cache kept only by the throttle repaints when the
                 // interval ends, so the filtered tree is not stale until the
@@ -271,6 +342,7 @@ impl TopicTreeUI for ZenohExplorer {
                 }
             } else {
                 self.tree_filter_cache = None;
+                self.tree_filter_counts = None;
             }
 
             egui::ScrollArea::vertical()
@@ -298,6 +370,7 @@ impl TopicTreeUI for ZenohExplorer {
                                 .size(TEXT_SMALL_SIZE)
                                 .color(self.text_tertiary_color()),
                             );
+                            self.help_link(ui, crate::ui::help::section::GETTING_STARTED);
                             ui.add_space(32.0);
                         });
                     } else {
@@ -414,11 +487,18 @@ impl TopicTreeUI for ZenohExplorer {
                 let response = if saveable {
                     response.on_hover_text("Save full payload to file (original size)")
                 } else {
-                    response.on_disabled_hover_text(reason)
+                    response.on_disabled_hover_text(reason.clone())
                 };
                 if response.clicked() {
                     let topic_owned = topic.clone();
                     self.save_topic_to_file(&topic_owned);
+                }
+                if !saveable {
+                    ui.label(
+                        RichText::new(&reason)
+                            .size(TEXT_SMALL_SIZE)
+                            .color(self.text_secondary_color()),
+                    );
                 }
 
                 // Pause/Resume button with animated indicator
@@ -500,7 +580,7 @@ impl TopicTreeUI for ZenohExplorer {
                             RichText::new("✓ All chunks received — ready to save")
                                 .color(ExplorerColors::SUCCESS),
                         );
-                        if ui.small_button("💾 Save").clicked() {
+                        if ui.add(icon_button("💾 Save")).clicked() {
                             let topic_owned = topic.clone();
                             self.save_topic_to_file(&topic_owned);
                         }
@@ -753,6 +833,16 @@ impl TopicTreeUI for ZenohExplorer {
                 return;
             }
         }
+        let filter_lower = if self.tree_filter_cache.is_some() {
+            self.tree_filter.to_lowercase()
+        } else {
+            String::new()
+        };
+        let underline = if self.dark_mode {
+            ExplorerColors::DARK_PRIMARY
+        } else {
+            ExplorerColors::PRIMARY
+        };
 
         let indent = 12.0 * depth as f32;
         let is_selected = self.selected_topic.as_ref() == Some(&full_path);
@@ -790,7 +880,10 @@ impl TopicTreeUI for ZenohExplorer {
                         node.last_payload.as_deref(),
                     )
                 };
-                let response = ui.selectable_label(is_selected, format!("{} {}", icon, node.key));
+                let response = ui.selectable_label(
+                    is_selected,
+                    row_label(ui, icon, &node.key, &filter_lower, underline),
+                );
 
                 if response.clicked() {
                     self.selected_topic = Some(full_path.clone());
@@ -830,7 +923,12 @@ impl TopicTreeUI for ZenohExplorer {
                         .payload_store
                         .read()
                         .is_ok_and(|s| s.contains_key(&full_path));
-                if exportable && ui.small_button("💾").on_hover_text("Save file").clicked() {
+                if exportable
+                    && ui
+                        .add(icon_button("💾"))
+                        .on_hover_text("Save file")
+                        .clicked()
+                {
                     self.save_topic_to_file(&full_path);
                 }
 
@@ -898,8 +996,10 @@ impl TopicTreeUI for ZenohExplorer {
                     }
 
                     let icon = if depth == 0 { "🌐" } else { "📡" };
-                    let response =
-                        ui.selectable_label(is_selected, format!("{} {}", icon, node.key));
+                    let response = ui.selectable_label(
+                        is_selected,
+                        row_label(ui, icon, &node.key, &filter_lower, underline),
+                    );
 
                     if response.clicked() {
                         self.selected_topic = Some(full_path.clone());
@@ -953,14 +1053,13 @@ impl TopicTreeUI for ZenohExplorer {
                     transfer::suggested_export_filename(topic, payload.filename.as_deref());
                 match transfer::export_payload_to_file(&suggested, &payload.bytes) {
                     Ok(Some(path)) => {
-                        self.ui_alert =
-                            Some(UiAlert::Success(format!("Saved to {}", path.display())));
+                        self.raise_alert(UiAlert::Success(format!("Saved to {}", path.display())));
                     }
                     Ok(None) => {} // user cancelled
-                    Err(e) => self.ui_alert = Some(UiAlert::Error(format!("Save failed: {}", e))),
+                    Err(e) => self.raise_alert(UiAlert::Error(format!("Save failed: {}", e))),
                 }
             }
-            Err(e) => self.ui_alert = Some(UiAlert::Error(format!("Save failed: {}", e))),
+            Err(e) => self.raise_alert(UiAlert::Error(format!("Save failed: {}", e))),
         }
     }
 }
@@ -979,6 +1078,23 @@ impl ZenohExplorer {
             && crate::validation::key_expr_error(&self.subscribe_key).is_none()
             && !self.subscriptions.iter().any(|s| s.key_expr == key)
             && !self.pending_subscribes.contains(key)
+    }
+
+    /// Why Subscribe is disabled, written beside it; None exactly when it is
+    /// enabled (the order follows `subscribe_enabled`).
+    pub(crate) fn subscribe_blocked_reason(&self) -> Option<&'static str> {
+        let key = self.subscribe_key.trim();
+        if !matches!(self.connection_status, ConnectionStatus::Connected) {
+            Some("Connect first")
+        } else if crate::validation::key_expr_error(&self.subscribe_key).is_some() {
+            Some("Fix the key above")
+        } else if self.subscriptions.iter().any(|s| s.key_expr == key) {
+            Some("Already subscribed to this key")
+        } else if self.pending_subscribes.contains(key) {
+            Some("Subscribing…")
+        } else {
+            None
+        }
     }
 }
 
@@ -1013,6 +1129,11 @@ pub(crate) fn leaf_icon(
 fn history_scan_note(list_len: usize, scan_limit: usize, shown: usize) -> Option<String> {
     (list_len > scan_limit && shown < 50)
         .then(|| format!("Searched only the newest {scan_limit} of {list_len} list rows"))
+}
+
+/// "2 of 3 topics" beside the tree filter.
+fn filter_count_text(n: usize, m: usize) -> String {
+    format!("{n} of {}", counted(m, "topic", "topics"))
 }
 
 /// `"1 {one}"` or `"{n} {many}"`.
@@ -1307,5 +1428,267 @@ mod tests {
         app.selected_topic = Some("r/a".to_string());
         let texts = details_texts(&mut app);
         assert!(!texts.iter().any(|t| t.contains("reply-val")), "{texts:?}");
+    }
+
+    use crate::app::headless::{node, nodes, text, text_shapes, texts, Headless, WIDE};
+    use crate::app::theme::MIN_TARGET;
+    use crate::ui::help::section;
+
+    fn tree_panel(a: &mut ZenohExplorer, ui: &mut egui::Ui) {
+        a.show_tree_panel(ui)
+    }
+
+    fn details_panel(a: &mut ZenohExplorer, ui: &mut egui::Ui) {
+        a.show_topic_details(ui)
+    }
+
+    /// An app with `paths` in the tree and the branches in `open` expanded.
+    fn tree_app(paths: &[&str], open: &[&str]) -> (ZenohExplorer, Headless) {
+        let (app, _tx) = ZenohExplorer::test_app();
+        for p in paths {
+            app.browse_tree.write().unwrap().insert_path(p);
+        }
+        let h = Headless::new(WIDE);
+        for b in open {
+            let mut s = egui::collapsing_header::CollapsingState::load_with_default_open(
+                &h.ctx,
+                egui::Id::new(("treenode", *b)),
+                true,
+            );
+            s.set_open(true);
+            s.store(&h.ctx);
+        }
+        (app, h)
+    }
+
+    /// Two frames (layout settles), with "Subscribe to Topics" opened by a click.
+    fn open_subscribe(h: &Headless, app: &mut ZenohExplorer) -> egui::FullOutput {
+        let out = h.panel(app, vec![], tree_panel);
+        let header = node(&out, "Subscribe to Topics").expect("header").rect;
+        h.click_panel(app, header.center(), tree_panel)
+    }
+
+    #[test]
+    fn subscribe_reason_matches_enabled() {
+        let (mut app, _tx) = ZenohExplorer::test_app();
+        app.subscribe_key = "demo/**".into();
+        assert_eq!(app.subscribe_blocked_reason(), Some("Connect first"));
+        app.connection_status = ConnectionStatus::Connected;
+        assert_eq!(app.subscribe_blocked_reason(), None);
+        assert!(app.subscribe_enabled());
+        app.pending_subscribes.insert("demo/**".into());
+        assert_eq!(app.subscribe_blocked_reason(), Some("Subscribing…"));
+        app.pending_subscribes.clear();
+        app.subscriptions.push(Subscription {
+            id: "1".into(),
+            key_expr: "demo/**".into(),
+            reliability: String::new(),
+            mode: String::new(),
+        });
+        assert_eq!(
+            app.subscribe_blocked_reason(),
+            Some("Already subscribed to this key")
+        );
+        app.subscribe_key = "demo//x".into();
+        assert_eq!(app.subscribe_blocked_reason(), Some("Fix the key above"));
+        for status in [ConnectionStatus::Disconnected, ConnectionStatus::Connected] {
+            app.connection_status = status;
+            for key in ["demo/**", "demo//x", "other/*"] {
+                app.subscribe_key = key.into();
+                assert_eq!(
+                    app.subscribe_blocked_reason().is_none(),
+                    app.subscribe_enabled(),
+                    "{key}: a reason exactly when disabled"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn subscribe_reason_is_visible() {
+        let (mut app, h) = tree_app(&[], &[]);
+        app.subscribe_key = "demo/**".into();
+        let out = open_subscribe(&h, &mut app);
+        let reason = text(&out, "Connect first").expect("reason beside Subscribe");
+        let button = node(&out, "Subscribe").expect("Subscribe");
+        assert!(
+            reason.rect.left() >= button.rect.right(),
+            "right of the button"
+        );
+        app.connection_status = ConnectionStatus::Connected;
+        let out = h.panel(&mut app, vec![], tree_panel);
+        assert!(text(&out, "Connect first").is_none());
+    }
+
+    #[test]
+    fn save_reason_is_visible() {
+        let (mut app, _tx) = ZenohExplorer::test_app();
+        app.browse_tree
+            .write()
+            .unwrap()
+            .insert_path("demo/x")
+            .update_data(
+                "v".to_string(),
+                "text/plain".to_string(),
+                false,
+                SampleKindView::Put,
+                None,
+            );
+        app.selected_topic = Some("demo/x".to_string());
+        let texts = details_texts(&mut app);
+        assert!(
+            texts.iter().any(|t| t == "No payload stored yet"),
+            "painted, not only a hover: {texts:?}"
+        );
+        let h = Headless::new(WIDE);
+        let out = h.panel(&mut app, vec![], details_panel);
+        let pause = node(&out, "⏸ Pause list").expect("Pause list");
+        assert!(pause.rect.height() >= MIN_TARGET, "{:?}", pause.rect);
+    }
+
+    #[test]
+    fn tree_rows_are_at_least_24() {
+        let (mut app, h) = tree_app(&["demo/a", "demo/b"], &["demo"]);
+        let _ = h.panel(&mut app, vec![], tree_panel);
+        let out = h.panel(&mut app, vec![], tree_panel);
+        let a = node(&out, "💾 a").expect("row a").rect;
+        let b = node(&out, "💾 b").expect("row b").rect;
+        let branch = node(&out, "🌐 demo").expect("branch row").rect;
+        for r in [a, b, branch] {
+            assert!(r.height() >= MIN_TARGET, "{r:?}");
+        }
+        assert!(b.top() - a.top() >= MIN_TARGET, "rows do not overlap");
+    }
+
+    #[test]
+    fn tree_icon_buttons_are_24_square() {
+        let (mut app, h) = tree_app(&["demo/b"], &["demo"]);
+        app.payload_store.write().unwrap().insert(
+            "demo/b".into(),
+            PayloadEntry {
+                bytes: b"hello".to_vec(),
+                received_at: chrono::Utc::now(),
+                filename: None,
+            },
+        );
+        app.connection_status = ConnectionStatus::Connected;
+        app.subscriptions.push(Subscription {
+            id: "1".into(),
+            key_expr: "demo/**".into(),
+            reliability: String::new(),
+            mode: String::new(),
+        });
+        let out = open_subscribe(&h, &mut app);
+        let icons: Vec<_> = nodes(&out)
+            .into_iter()
+            .filter(|n| n.name == "✖" || n.name == "💾")
+            .collect();
+        assert_eq!(
+            icons.len(),
+            3,
+            "clear filter, unsubscribe and the row's save: {icons:?}"
+        );
+        for n in icons {
+            assert!(
+                n.rect.width() >= MIN_TARGET && n.rect.height() >= MIN_TARGET,
+                "{} is {:?}",
+                n.name,
+                n.rect.size()
+            );
+        }
+    }
+
+    /// Regression guard, not a red/green test: it passes before and after this
+    /// part and fails only if the row work moves or resizes egui's expander.
+    #[test]
+    fn expander_rect_unchanged() {
+        let (mut app, h) = tree_app(&["demo/a"], &[]);
+        let _ = h.panel(&mut app, vec![], tree_panel);
+        let _ = h.panel(&mut app, vec![], tree_panel);
+        let spacing = h.ctx.style().spacing.clone();
+        let toggle = h
+            .ctx
+            .read_response(egui::Id::new(("treenode", "demo")))
+            .expect("expander response")
+            .rect;
+        assert_eq!(
+            toggle.size(),
+            egui::vec2(spacing.indent, spacing.icon_width)
+        );
+    }
+
+    #[test]
+    fn filter_shows_counts_and_highlights_the_match() {
+        let (mut app, h) = tree_app(&["a/x", "a/y", "b/x"], &[]);
+        let out = h.panel(&mut app, vec![], tree_panel);
+        assert!(
+            texts(&out).iter().all(|t| !t.text.contains(" of ")),
+            "no count without a filter"
+        );
+        app.tree_filter = "x".into();
+        let _ = h.panel(&mut app, vec![], tree_panel);
+        let out = h.panel(&mut app, vec![], tree_panel);
+        assert!(text(&out, "2 of 3 topics").is_some(), "{:?}", texts(&out));
+        let fill = h.ctx.style().visuals.selection.bg_fill;
+        let rows: Vec<_> = text_shapes(&out)
+            .into_iter()
+            .filter(|t| t.galley.text() == "💾 x")
+            .collect();
+        assert_eq!(rows.len(), 2, "a/x and b/x");
+        for t in rows {
+            let hit = t
+                .galley
+                .job
+                .sections
+                .iter()
+                .find(|s| s.format.background == fill)
+                .expect("the matched part is highlighted");
+            assert_eq!(&t.galley.job.text[hit.byte_range.clone()], "x");
+            assert!(hit.format.underline.width > 0.0, "not colour alone");
+        }
+    }
+
+    /// Regression guard, not a red/green test: it passes before and after this
+    /// part, because P1 already opens every visible branch while filtering
+    /// (`load_with_default_open(ui.ctx(), id, filtering)`), and fails only if
+    /// part b narrows that default (for example to ancestors of a match only).
+    /// Both branches contain a match, and both also match themselves ("ax",
+    /// "bx"), so an ancestors-only rule would leave them closed.
+    #[test]
+    fn filtering_opens_every_visible_branch() {
+        let (mut app, h) = tree_app(&["ax/x", "bx/sub/x"], &[]);
+        app.tree_filter = "x".into();
+        let _ = h.panel(&mut app, vec![], tree_panel);
+        let out = h.panel(&mut app, vec![], tree_panel);
+        let leaves = text_shapes(&out)
+            .into_iter()
+            .filter(|t| t.galley.text() == "💾 x")
+            .count();
+        assert_eq!(
+            leaves,
+            2,
+            "ax, bx and bx/sub are all open: {:?}",
+            texts(&out)
+        );
+    }
+
+    #[test]
+    fn tree_help_links_open_their_sections() {
+        let (mut app, h) = tree_app(&[], &[]);
+        let out = h.panel(&mut app, vec![], tree_panel);
+        let link = node(&out, "More in Help").expect("empty tree links Getting started");
+        let _ = h.click_panel(&mut app, link.rect.center(), tree_panel);
+        assert_eq!(app.detail_view, DetailView::Help);
+        assert_eq!(app.help_target, Some(section::GETTING_STARTED));
+        app.subscribe_key = "demo//x".into();
+        let out = open_subscribe(&h, &mut app);
+        assert_eq!(
+            nodes(&out)
+                .iter()
+                .filter(|n| n.name == "More in Help")
+                .count(),
+            2,
+            "the key error links Key expressions too"
+        );
     }
 }

@@ -115,8 +115,8 @@ impl MessagesUI for ZenohExplorer {
             ));
         });
 
-        // Memory management controls
-        ui.horizontal(|ui| {
+        // Memory management controls; wraps so Dedup and its Help link stay on screen
+        ui.horizontal_wrapped(|ui| {
             ui.label("Memory Limit (MB):");
             let mut limit_str = self.max_memory_mb.to_string();
             if ui.text_edit_singleline(&mut limit_str).changed() {
@@ -150,6 +150,7 @@ impl MessagesUI for ZenohExplorer {
                         .size(TEXT_SMALL_SIZE),
                 );
             }
+            self.help_link(ui, crate::ui::help::section::LIMITS);
         });
 
         if !self.paused_keys.is_empty() {
@@ -281,5 +282,49 @@ mod tests {
             paused_note(&["e", "c", "a", "d", "b"]),
             "New messages on 5 paused topics are not listed: a, b, c, and 2 more"
         );
+    }
+
+    #[test]
+    fn limits_link_and_controls_are_24() {
+        use crate::app::headless::{node, Headless, WIDE};
+        use crate::app::theme::MIN_TARGET;
+        fn messages_panel(a: &mut ZenohExplorer, ui: &mut egui::Ui) {
+            a.show_messages_tab(ui)
+        }
+        let (mut app, _tx) = ZenohExplorer::test_app();
+        let h = Headless::new(WIDE);
+        let out = h.panel(&mut app, vec![], messages_panel);
+        for name in ["Clear", "Auto-scroll", "Dedup"] {
+            let n = node(&out, name).unwrap_or_else(|| panic!("{name}"));
+            assert!(n.rect.height() >= MIN_TARGET, "{name} {:?}", n.rect);
+        }
+        let link = node(&out, "More in Help").expect("the Limits row links Limits");
+        let _ = h.click_panel(&mut app, link.rect.center(), messages_panel);
+        assert_eq!(app.help_target, Some(crate::ui::help::section::LIMITS));
+    }
+
+    #[test]
+    fn limits_row_stays_inside_the_whole_window() {
+        use crate::app::headless::{node, Headless, WIDE};
+        let sizes = [WIDE, egui::vec2(1000.0, 600.0)];
+        for deduped in [0, 12_345] {
+            for size in sizes {
+                let (mut app, _tx) = ZenohExplorer::test_app();
+                app.messages_deduped = deduped;
+                let h = Headless::new(size);
+                let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, size);
+                let _ = h.run(vec![], |ctx| app.frame_ui(ctx));
+                let out = h.run(vec![], |ctx| app.frame_ui(ctx));
+                for name in ["Dedup", "More in Help"] {
+                    let n = node(&out, name)
+                        .unwrap_or_else(|| panic!("{name} at {size:?}, deduped {deduped}"));
+                    assert!(
+                        screen.contains_rect(n.rect),
+                        "{name} {:?} lies outside the {size:?} window (deduped {deduped})",
+                        n.rect
+                    );
+                }
+            }
+        }
     }
 }

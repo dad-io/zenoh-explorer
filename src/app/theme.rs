@@ -6,6 +6,17 @@ use egui::Color32;
 use crate::app::ZenohExplorer;
 use crate::colors::ExplorerColors;
 
+/// The smallest click target, in points (WCAG 2.2 SC 2.5.8, Snow White F-T4-10).
+pub(crate) const MIN_TARGET: f32 = 24.0;
+
+/// An icon-only or small button with a `MIN_TARGET` square hit area and egui's
+/// small padding; its look is egui's normal button.
+pub(crate) fn icon_button<'a>(text: impl Into<egui::WidgetText>) -> egui::Button<'a> {
+    egui::Button::new(text)
+        .small()
+        .min_size(egui::vec2(MIN_TARGET, MIN_TARGET))
+}
+
 impl ZenohExplorer {
     pub(crate) fn background_color(&self) -> Color32 {
         if self.dark_mode {
@@ -19,6 +30,9 @@ impl ZenohExplorer {
     pub(crate) fn apply_theme(&self, ctx: &egui::Context) {
         ctx.style_mut(|style| {
             style.animation_time = 0.001;
+            // Buttons, selectable labels (tabs, tree rows), checkboxes, combo
+            // boxes and collapsing headers are at least MIN_TARGET tall.
+            style.spacing.interact_size.y = MIN_TARGET;
             if self.dark_mode {
                 style.visuals.widgets.inactive.weak_bg_fill = ExplorerColors::DARK_PRIMARY;
                 style.visuals.widgets.hovered.weak_bg_fill = ExplorerColors::DARK_PRIMARY_HOVER;
