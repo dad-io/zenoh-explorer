@@ -1,9 +1,0 @@
-{"src":"../../app/dark-1400-01-disconnected-panel.png","out":"../t12-B-connect.png","ops":[
-{"op":"shade","r":[1090,151,2784,466],"c":"#34c75955"},{"op":"shade","r":[16,117,2784,139],"c":"#34c75966"},{"op":"shade","r":[16,470,2784,480],"c":"#34c75966"},
-{"op":"box","r":[15,151,1082,456],"c":"#ff8a3d","w":3,"dash":[12,8]},
-{"op":"box","r":[28,409,136,442],"c":"#ff8a3d","w":6},
-{"op":"box","r":[2510,84,2700,115],"c":"#3ec6ff","w":5},
-{"op":"path","p":[[136,425],[2610,425],[2610,118]],"c":"#ffcc00","w":7,"dash":[18,10],"arrow":true},
-{"op":"label","at":[1150,200],"t":"5 CONNECT  button -> header status label (MonitorConnected, events.rs:98-102)\nno facing geometry: result-trace.js:233-254 offers no path -> omit (:363)\namber = the 2-segment chassis route: ~1390 pt, also over the 520 pt cap\nreceiver is a label only; the source form is removed at click (app.rs:587, :468-471)","c":"#ffcc00"},
-{"op":"label","at":[1150,1500],"t":"LEGEND  orange = source   cyan = receiver\ngreen fill = exposed chassis   amber dash = chassis route exists, specimen offers no path","c":"#ffffff"}
-]}

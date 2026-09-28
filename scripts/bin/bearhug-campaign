@@ -1,8 +1,0 @@
-#!/bin/sh
-set -eu
-export PYTHONDONTWRITEBYTECODE=1
-root=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
-export BEARHUG_RUNTIME_ROOT="$root/.bearhug"
-export BEARHUG_PROJECT_ROOT="$root"
-export PYTHONPATH="$root/.bearhug/lib"
-exec python3 -m bearhug.project_campaign --root "$root" "$@"

@@ -1,2 +1,0 @@
-    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.45s
-     Running `target/debug/examples/causal_motion_spike`

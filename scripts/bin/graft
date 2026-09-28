@@ -1,4 +1,0 @@
-#!/bin/sh
-set -eu
-root=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
-exec node "$root/.bearhug/vendor/graft/dist/cli.js" "$@"

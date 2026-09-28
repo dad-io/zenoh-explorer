@@ -113,3 +113,13 @@ __pycache__/
 
 # Bear Hug runtime: local tooling, not part of the app
 .bearhug/
+
+# Development tooling (graft, memq, planning docs): kept local, not part of the app
+docs/
+scripts/hooks/
+scripts/bin/
+scripts/bearhug_*.py
+scripts/plan-board.sh
+.memq.json
+.mcp.json
+.ignore

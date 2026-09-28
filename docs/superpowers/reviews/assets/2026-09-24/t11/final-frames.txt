@@ -1,4 +1,0 @@
-reference: shots-shots-reveal/f243_n00251.ppm
-shots-shots-supersede/f287_n00302.ppm: 0 changed pixels above the footer
-shots-shots-reduced/f221_n00236.ppm: 93 changed pixels above the footer bbox px x414-432 y47-65
-shots-shots-toggle/f222_n00231.ppm: 0 changed pixels above the footer
