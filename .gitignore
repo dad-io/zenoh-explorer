@@ -110,3 +110,6 @@ __pycache__/
 .bearhug/packets/
 .bearhug/packet-injections/
 .bearhug/packet-unavailable/
+
+# Bear Hug runtime: local tooling, not part of the app
+.bearhug/
