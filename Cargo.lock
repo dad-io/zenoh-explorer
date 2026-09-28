@@ -6412,7 +6412,7 @@ dependencies = [
 
 [[package]]
 name = "zenoh-explorer"
-version = "0.9.1"
+version = "1.0.0"
 dependencies = [
  "chrono",
  "eframe",
