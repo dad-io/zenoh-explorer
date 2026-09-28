@@ -40,7 +40,7 @@ fn leader_line_with_count(
         let y = rect.center().y;
         let (alpha, dashed) = if expanded { (100, false) } else { (64, true) };
         let stroke = egui::Stroke::new(
-            1.0,
+            1.0_f32,
             egui::Color32::from_rgba_unmultiplied(
                 text_color.r(),
                 text_color.g(),
@@ -164,7 +164,7 @@ fn row_label(
     };
     let hit = egui::TextFormat {
         background: ui.visuals().selection.bg_fill,
-        underline: egui::Stroke::new(1.0, underline),
+        underline: egui::Stroke::new(1.0_f32, underline),
         ..plain.clone()
     };
     let mut job = egui::text::LayoutJob::default();
@@ -801,11 +801,7 @@ impl TopicTreeUI for ZenohExplorer {
         let mut current = node;
 
         for part in parts {
-            if let Some(child) = current.children.get(part) {
-                current = child;
-            } else {
-                return None;
-            }
+            current = current.children.get(part)?;
         }
 
         Some(current)
