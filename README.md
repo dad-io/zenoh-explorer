@@ -25,7 +25,7 @@ A GUI application for exploring, debugging, and monitoring Zenoh networks.
 - **Subscriptions**: subscribe to key expressions with `*` and `**` wildcards; unsubscribe from the Active list. Subscriptions are re-declared after a reconnect
 - **Topic tree**: keys arranged by level
   - Leaf rows show the start of the last value and the number of messages received; branch rows show how many leaf topics are below them
-  - Selecting a topic shows its current value (JSON pretty-printed when the value is 1,024 bytes or less, or up to 10 KiB after expanding it), encoding, source time, a DELETE marker, and a history of its newest 50 listed messages (found among the newest 20,000 list rows)
+  - Selecting a topic shows its current value (JSON pretty-printed when the value is 1,024 bytes or less, or up to 10 KiB after expanding it; values this app published are shown from a 256-byte preview), encoding, source time, a DELETE marker, and a history of its newest 50 listed messages (found among the newest 20,000 list rows)
   - Selecting a branch shows a summary: topics below, messages received, age of the last message
   - Filter box: case-insensitive match on the key path, with the match highlighted, "n of m topics" beside the box, and matching branches expanded while the filter is set
   - Topics whose latest value was published from this app are marked
