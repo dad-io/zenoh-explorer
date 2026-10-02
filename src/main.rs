@@ -10,10 +10,12 @@
 mod app;
 mod colors;
 mod events;
+mod payload;
 mod transfer;
 mod types;
 mod ui;
-mod zenoh_worker;
+mod validation;
+mod worker;
 
 use app::ZenohExplorer;
 use eframe::egui;
@@ -38,8 +40,13 @@ fn main() -> eframe::Result<()> {
         }));
     }
 
-    // Initialize tracing for debug logging
-    tracing_subscriber::fmt::init();
+    // Initialize tracing: RUST_LOG wins; otherwise info, with zenoh at warn
+    tracing_subscriber::fmt()
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info,zenoh=warn")),
+        )
+        .init();
 
     info!("Zenoh Explorer starting...");
 
@@ -61,9 +68,9 @@ fn main() -> eframe::Result<()> {
     eframe::run_native(
         "Zenoh Explorer",
         options,
-        Box::new(|_cc| {
+        Box::new(|cc| {
             info!("Creating Zenoh Explorer instance...");
-            Ok(Box::new(ZenohExplorer::new()))
+            Ok(Box::new(ZenohExplorer::new(cc.egui_ctx.clone())))
         }),
     )
 }

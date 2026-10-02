@@ -1,60 +1,37 @@
 [package]
 name = "zenoh-explorer"
-version = "0.9.1"
+version = "1.0.0"
 edition = "2021"
+rust-version = "1.88"
 description = "A native GUI application for exploring Zenoh networks"
 license = "Apache-2.0"
 authors = ["Zenoh Community"]
-repository = "https://github.com/zenoh-project/zenoh-explorer"
+repository = "https://github.com/dad-io/zenoh-explorer"
 keywords = ["zenoh", "network", "explorer", "gui", "client"]
 categories = ["network-programming", "gui"]
 
 [workspace]
 
 [dependencies]
-# Core Zenoh
-zenoh = { version = "1.0", features = ["unstable"] }
-
-# GUI Framework
+zenoh = { version = "1.7", features = ["unstable"] }
 egui = "0.29"
-eframe = { version = "0.29", default-features = false, features = ["glow"] }
-egui_extras = { version = "0.29", features = ["serde"] }
-
-# Async runtime
-tokio = { version = "1.0", features = ["full"] }
-
-# JSON handling
-serde = { version = "1.0", features = ["derive"] }
+eframe = { version = "0.29", default-features = false, features = ["glow", "default_fonts", "wayland", "x11", "accesskit"] }
+tokio = { version = "1.0", features = ["rt-multi-thread", "sync", "time", "macros"] }
 serde_json = "1.0"
-
-# Time handling
-chrono = { version = "0.4", features = ["serde"] }
-
-# Logging
+chrono = "0.4"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-
-# Error handling
-anyhow = "1.0"
-
-# Hashing for deduplication
 seahash = "4.1"
-
-# Native file dialogs
 rfd = "0.14"
-
-[[bin]]
-name = "zenoh-explorer"
-path = "src/main.rs"
 
 [profile.release]
 opt-level = 3
 lto = true
 codegen-units = 1
 panic = "abort"
-strip = true
-
-[profile.dev]
-opt-level = 0
-debug = true
-overflow-checks = true
+# Line tables go to a separate .dSYM/.pdb/.dwp file that the release workflow
+# uploads as a debug-symbols asset. The symbol table stays in the binary so that
+# RUST_BACKTRACE output names functions.
+debug = "line-tables-only"
+split-debuginfo = "packed"
+strip = "none"

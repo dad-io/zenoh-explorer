@@ -5,8 +5,9 @@
 //! large file transfer logic that MUST be preserved through refactoring.
 //!
 //! Chunk key format: `{topic}/__chunk/{total_size}/{total_chunks}/{chunk_index}`
-//! - CHUNK_SIZE = 64MB (publish side, in zenoh_worker.rs)
-//! - MAX_SINGLE_PAYLOAD = u32::MAX ~4GB (publish side, in zenoh_worker.rs)
+//! - Payloads larger than CHUNK_SIZE (64 MiB) are published as chunks; anything
+//!   up to CHUNK_SIZE goes out as a single put.
+//! - CHUNK_SIZE is defined here and shared with `worker::publish`.
 
 use std::collections::{HashMap, HashSet};
 use tracing::info;
@@ -15,12 +16,18 @@ use chrono::{DateTime, Utc};
 
 use crate::types::{PayloadEntry, PayloadStoreMap};
 
-/// Publish-side chunk size (must match zenoh_worker.rs CHUNK_SIZE).
+/// Chunk size, shared with `worker::publish`.
 pub const CHUNK_SIZE: usize = 64 * 1024 * 1024;
 
 /// Cap on non-chunk entries in the export store. Chunk entries are exempt:
 /// they are bounded per-topic by their own total_chunks and purged by generation.
 pub const MAX_PLAIN_ENTRIES: usize = 500;
+
+/// Byte budget for non-chunk entries in the export store.
+pub const MAX_PLAIN_BYTES: usize = 512 * 1024 * 1024;
+
+/// Incomplete chunk groups with no new chunk for this long are dropped.
+pub const STALE_TRANSFER_AGE: chrono::Duration = chrono::Duration::minutes(10);
 
 /// Metadata parsed from a chunk key `{topic}/__chunk/{total_size}/{total_chunks}/{index}`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -37,6 +44,7 @@ impl ChunkMeta {
         self.total_chunks > 0
             && self.index < self.total_chunks
             && self.total_size <= self.total_chunks.saturating_mul(CHUNK_SIZE)
+            && self.total_size > (self.total_chunks - 1).saturating_mul(CHUNK_SIZE)
     }
 }
 
@@ -60,6 +68,31 @@ pub fn parse_chunk_key(key: &str) -> Option<(&str, ChunkMeta)> {
     ))
 }
 
+/// Chunk groups keyed by (topic, total_size, total_chunks): newest arrival and received indices.
+type ChunkGroups = HashMap<(String, usize, usize), (DateTime<Utc>, HashSet<usize>)>;
+
+/// Remove incomplete chunk groups whose newest chunk is older than STALE_TRANSFER_AGE; complete groups stay exportable.
+pub fn gc_stale_transfers(store: &mut PayloadStoreMap, now: DateTime<Utc>) {
+    let mut groups: ChunkGroups = HashMap::new();
+    for (k, e) in store.iter() {
+        if let Some((t, m)) = parse_chunk_key(k) {
+            let (newest, indices) = groups
+                .entry((t.to_string(), m.total_size, m.total_chunks))
+                .or_insert((e.received_at, HashSet::new()));
+            if e.received_at > *newest {
+                *newest = e.received_at;
+            }
+            indices.insert(m.index);
+        }
+    }
+    store.retain(|k, _| match parse_chunk_key(k) {
+        Some((t, m)) => groups
+            .get(&(t.to_string(), m.total_size, m.total_chunks))
+            .is_none_or(|(at, idx)| idx.len() == m.total_chunks || now - *at < STALE_TRANSFER_AGE),
+        None => true,
+    });
+}
+
 /// Insert a payload into the export store, enforcing the eviction policy:
 /// - chunk keys: purge any stale-generation chunks for the same topic, never
 ///   evict other entries, drop entries with insane metadata
@@ -68,6 +101,7 @@ pub fn parse_chunk_key(key: &str) -> Option<(&str, ChunkMeta)> {
 /// Assumes "/__chunk/" is a reserved infix never used in plain topic names.
 pub fn insert_payload(store: &mut PayloadStoreMap, key: String, entry: PayloadEntry) {
     if let Some((topic, meta)) = parse_chunk_key(&key) {
+        gc_stale_transfers(store, Utc::now());
         if !meta.is_sane() {
             info!("Dropping chunk with insane metadata: {}", key);
             return;
@@ -89,6 +123,15 @@ pub fn insert_payload(store: &mut PayloadStoreMap, key: String, entry: PayloadEn
         }
         store.insert(key, entry);
     } else {
+        if entry.bytes.len() > MAX_PLAIN_BYTES {
+            store.remove(&key);
+            info!(
+                "Not storing {} for export: {} bytes exceeds budget",
+                key,
+                entry.bytes.len()
+            );
+            return;
+        }
         let plain_count = store.keys().filter(|k| !k.contains("/__chunk/")).count();
         if plain_count >= MAX_PLAIN_ENTRIES && !store.contains_key(&key) {
             let oldest = store
@@ -98,6 +141,25 @@ pub fn insert_payload(store: &mut PayloadStoreMap, key: String, entry: PayloadEn
                 .map(|(k, _)| k.clone());
             if let Some(k) = oldest {
                 store.remove(&k);
+            }
+        }
+        store.remove(&key);
+        let mut plain_bytes: usize = store
+            .iter()
+            .filter(|(k, _)| !k.contains("/__chunk/"))
+            .map(|(_, e)| e.bytes.len())
+            .sum();
+        while plain_bytes + entry.bytes.len() > MAX_PLAIN_BYTES {
+            let Some(oldest) = store
+                .iter()
+                .filter(|(k, _)| !k.contains("/__chunk/"))
+                .min_by_key(|(_, e)| e.received_at)
+                .map(|(k, _)| k.clone())
+            else {
+                break;
+            };
+            if let Some(e) = store.remove(&oldest) {
+                plain_bytes -= e.bytes.len();
             }
         }
         store.insert(key, entry);
@@ -193,6 +255,31 @@ pub fn get_payload_for_export(
         ));
     }
 
+    let last = progress.total_chunks - 1;
+    let mut actual = 0usize;
+    for (i, e) in &by_index {
+        let expected = if *i == last {
+            progress.total_size - last * CHUNK_SIZE
+        } else {
+            CHUNK_SIZE
+        };
+        if e.bytes.len() != expected {
+            return Err(format!(
+                "Corrupt transfer: chunk {} has {} bytes, expected {}",
+                i,
+                e.bytes.len(),
+                expected
+            ));
+        }
+        actual += e.bytes.len();
+    }
+    if actual != progress.total_size {
+        return Err(format!(
+            "Corrupt transfer: chunks total {} bytes, expected {}",
+            actual, progress.total_size
+        ));
+    }
+
     let mut bytes = Vec::with_capacity(progress.total_size);
     let mut filename = None;
     for e in by_index.values() {
@@ -218,15 +305,33 @@ pub fn get_payload_for_export(
     Ok(ExportPayload { bytes, filename })
 }
 
+/// Reduce a network-supplied filename to a safe final path component.
+pub fn sanitize_filename(name: &str) -> Option<String> {
+    let last = name.rsplit(['/', '\\', ':']).next().unwrap_or("");
+    let cleaned: String = last
+        .chars()
+        .filter(|c| {
+            !c.is_control() && !matches!(c, '\u{202a}'..='\u{202e}' | '\u{2066}'..='\u{2069}')
+        })
+        .collect();
+    let trimmed = cleaned.trim().trim_matches('.').trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    let mut end = trimmed.len().min(255);
+    while !trimmed.is_char_boundary(end) {
+        end -= 1;
+    }
+    Some(trimmed[..end].to_string())
+}
+
 /// Resolve the suggested save-dialog filename:
-/// 1. the transmitted original filename, if any
+/// 1. the transmitted original filename, reduced by `sanitize_filename`, if any
 /// 2. the topic's last segment, when it carries a plausible extension
 /// 3. fallback: topic with '/'→'_' plus ".bin"
 pub fn suggested_export_filename(topic: &str, transmitted: Option<&str>) -> String {
-    if let Some(name) = transmitted {
-        if !name.trim().is_empty() {
-            return name.to_string();
-        }
+    if let Some(name) = transmitted.and_then(sanitize_filename) {
+        return name;
     }
     let last = topic.rsplit('/').next().unwrap_or(topic);
     let has_real_ext = last.rsplit_once('.').is_some_and(|(stem, ext)| {
@@ -323,18 +428,28 @@ mod tests {
     #[test]
     fn export_reassembles_in_index_order() {
         let mut store = PayloadStoreMap::new();
-        store.insert("t/__chunk/6/2/1".into(), entry_with(vec![4, 5, 6], 1));
-        store.insert("t/__chunk/6/2/0".into(), entry_with(vec![1, 2, 3], 2));
-        assert_eq!(
-            get_payload_for_export(&store, "t").unwrap().bytes,
-            vec![1, 2, 3, 4, 5, 6]
+        let total = CHUNK_SIZE + 3;
+        store.insert(
+            format!("t/__chunk/{}/2/1", total),
+            entry_with(vec![4, 5, 6], 1),
         );
+        store.insert(
+            format!("t/__chunk/{}/2/0", total),
+            entry_with(vec![1; CHUNK_SIZE], 2),
+        );
+        let bytes = get_payload_for_export(&store, "t").unwrap().bytes;
+        assert_eq!(bytes.len(), total);
+        assert_eq!(bytes[0], 1);
+        assert_eq!(&bytes[CHUNK_SIZE - 1..], &[1, 4, 5, 6]);
     }
 
     #[test]
     fn export_incomplete_reports_progress() {
         let mut store = PayloadStoreMap::new();
-        store.insert("t/__chunk/6/2/0".into(), entry_with(vec![1, 2, 3], 1));
+        store.insert(
+            format!("t/__chunk/{}/2/0", CHUNK_SIZE + 3),
+            entry_with(vec![0; CHUNK_SIZE], 1),
+        );
         let err = get_payload_for_export(&store, "t").unwrap_err();
         assert!(err.contains("1 of 2"), "got: {err}");
     }
@@ -342,10 +457,21 @@ mod tests {
     #[test]
     fn export_size_mismatch_is_error() {
         let mut store = PayloadStoreMap::new();
-        store.insert("t/__chunk/99/2/0".into(), entry_with(vec![1, 2, 3], 1));
-        store.insert("t/__chunk/99/2/1".into(), entry_with(vec![4, 5, 6], 2));
+        let total = CHUNK_SIZE + 3;
+        store.insert(
+            format!("t/__chunk/{}/2/0", total),
+            entry_with(vec![0; CHUNK_SIZE], 1),
+        );
+        // last chunk carries 4 bytes where the key's total_size leaves room for 3
+        store.insert(
+            format!("t/__chunk/{}/2/1", total),
+            entry_with(vec![4, 5, 6, 7], 2),
+        );
         let err = get_payload_for_export(&store, "t").unwrap_err();
-        assert!(err.contains("size mismatch"), "got: {err}");
+        assert!(
+            err.contains("chunk 1 has 4 bytes, expected 3"),
+            "got: {err}"
+        );
     }
 
     #[test]
@@ -372,12 +498,15 @@ mod tests {
         for i in 0..MAX_PLAIN_ENTRIES {
             store.insert(format!("topic/{}", i), entry(1000 + i as i64));
         }
-        // 600 chunks of one transfer all fit alongside the plain cap
+        // 600 chunks of one transfer all fit alongside the plain cap.
+        // A current timestamp: the incomplete transfer must not look stale to GC.
         for i in 0..600usize {
+            let mut e = entry(0);
+            e.received_at = chrono::Utc::now();
             insert_payload(
                 &mut store,
                 format!("big/file/__chunk/{}/600/{}", 600 * CHUNK_SIZE, i),
-                entry(2000),
+                e,
             );
         }
         let chunk_count = store.keys().filter(|k| k.contains("/__chunk/")).count();
@@ -541,9 +670,101 @@ mod tests {
     fn export_ignores_out_of_range_indices() {
         let mut store = PayloadStoreMap::new();
         // direct inserts bypass insert_payload's sanity gate
-        store.insert("t/__chunk/6/2/0".into(), entry_with(vec![1, 2, 3], 1));
-        store.insert("t/__chunk/6/2/5".into(), entry_with(vec![4, 5, 6], 2)); // index 5 of 2 — insane
+        let total = CHUNK_SIZE + 3;
+        store.insert(
+            format!("t/__chunk/{}/2/0", total),
+            entry_with(vec![0; CHUNK_SIZE], 1),
+        );
+        store.insert(
+            format!("t/__chunk/{}/2/5", total),
+            entry_with(vec![4, 5, 6], 2),
+        ); // index 5 of 2 — insane
         let err = get_payload_for_export(&store, "t").unwrap_err();
         assert!(err.contains("1 of 2"), "got: {err}");
+    }
+
+    #[test]
+    fn export_rejects_claimed_size_larger_than_chunks() {
+        let mut store = PayloadStoreMap::new();
+        for i in 0..2 {
+            insert_payload(
+                &mut store,
+                format!("t/__chunk/{}/2/{}", 2 * CHUNK_SIZE, i),
+                entry_with(vec![], 100 + i as i64),
+            );
+        }
+        let err = get_payload_for_export(&store, "t").unwrap_err();
+        assert!(err.contains("chunk"), "{err}");
+    }
+
+    #[test]
+    fn sanitize_strips_paths_and_controls() {
+        assert_eq!(
+            sanitize_filename("../../etc/passwd").as_deref(),
+            Some("passwd")
+        );
+        assert_eq!(
+            sanitize_filename("C:\\x\\evil.exe").as_deref(),
+            Some("evil.exe")
+        );
+        assert_eq!(
+            sanitize_filename("a\u{202e}fdp.exe").as_deref(),
+            Some("afdp.exe")
+        );
+        assert_eq!(sanitize_filename(" .. "), None);
+        assert_eq!(
+            sanitize_filename(&"a".repeat(400)).map(|s| s.len()),
+            Some(255)
+        );
+    }
+
+    #[test]
+    fn plain_entries_respect_byte_budget() {
+        let mut store = PayloadStoreMap::new();
+        let big = MAX_PLAIN_BYTES / 2 + 1;
+        insert_payload(&mut store, "a".into(), entry_with(vec![0; big], 100));
+        insert_payload(&mut store, "b".into(), entry_with(vec![0; big], 200));
+        let total: usize = store.values().map(|e| e.bytes.len()).sum();
+        assert!(total <= MAX_PLAIN_BYTES);
+        assert!(store.contains_key("b") && !store.contains_key("a"));
+    }
+
+    #[test]
+    fn stale_incomplete_transfers_are_collected() {
+        let mut store = PayloadStoreMap::new();
+        let mut old = entry_with(vec![0; 10], 0);
+        old.received_at = chrono::Utc::now() - chrono::Duration::minutes(11);
+        store.insert(format!("t/__chunk/{}/2/0", CHUNK_SIZE + 10), old);
+        gc_stale_transfers(&mut store, chrono::Utc::now());
+        assert!(store.is_empty());
+    }
+
+    /// G1-3: a complete transfer stays exportable however old it is.
+    #[test]
+    fn stale_complete_transfer_is_kept() {
+        let mut store = PayloadStoreMap::new();
+        for i in 0..2 {
+            let mut e = entry_with(vec![0; 10], 0);
+            e.received_at = chrono::Utc::now() - chrono::Duration::minutes(11);
+            store.insert(format!("t/__chunk/{}/2/{i}", CHUNK_SIZE + 10), e);
+        }
+        gc_stale_transfers(&mut store, chrono::Utc::now());
+        assert_eq!(store.len(), 2, "Save File still has both chunks");
+    }
+
+    /// G1-4: an oversized value also removes the key's older value.
+    #[test]
+    fn oversized_plain_entry_drops_previous_value() {
+        let mut store = PayloadStoreMap::new();
+        insert_payload(&mut store, "k".into(), entry_with(vec![1, 2, 3], 100));
+        insert_payload(
+            &mut store,
+            "k".into(),
+            entry_with(vec![0; MAX_PLAIN_BYTES + 1], 200),
+        );
+        assert!(
+            !store.contains_key("k"),
+            "Save File must not export the older value"
+        );
     }
 }

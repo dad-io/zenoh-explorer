@@ -6,6 +6,59 @@ use tracing::{error, info};
 use crate::app::ZenohExplorer;
 use crate::colors::ExplorerColors;
 use crate::types::*;
+use crate::ui::query::connection_notice;
+
+/// What the queryable serves, shown under its heading.
+const QUERYABLE_CAPTION: &str = "Answers queries with the last value this app published on each key (typed text only, up to 10 MB; not imports)";
+
+/// One line saying what happened to the last publish.
+fn publish_status_line(s: &PublishStatus) -> String {
+    match s {
+        PublishStatus::Sending { key, bytes } => {
+            format!(
+                "Publishing {} to {key}…",
+                crate::transfer::format_size(*bytes)
+            )
+        }
+        PublishStatus::Published { key, bytes, at } => format!(
+            "Published {} to {key} · {}",
+            crate::transfer::format_size(*bytes),
+            format_local_time(at, &chrono::Utc::now())
+        ),
+        PublishStatus::Failed(reason) => format!("Not published: {reason}"),
+    }
+}
+
+/// The Publish button's label: pending wins, then the empty-payload warning.
+fn publish_button_label(payload_empty: bool, pending: bool) -> &'static str {
+    if pending {
+        "Publishing…"
+    } else if payload_empty {
+        "Publish empty payload"
+    } else {
+        "Publish"
+    }
+}
+
+/// Why Publish is disabled, written beside it; None when it is enabled.
+fn publish_blocked_reason(connected: bool, key_invalid: bool) -> Option<&'static str> {
+    if !connected {
+        Some("Connect first")
+    } else if key_invalid {
+        Some("Fix the key above")
+    } else {
+        None
+    }
+}
+
+/// Why Enable Queryable is disabled while connected ("Off: not connected"
+/// already says it when disconnected).
+fn queryable_blocked_reason(connected: bool, pattern_invalid: bool) -> Option<&'static str> {
+    (connected && pattern_invalid).then_some("Fix the pattern above")
+}
+
+/// Why the Key Pattern field is locked (hover and painted line).
+const PATTERN_LOCKED: &str = "Untick Enable Queryable to change the pattern";
 
 /// Trait for publish tab rendering.
 pub trait PublishUI {
@@ -16,12 +69,10 @@ impl PublishUI for ZenohExplorer {
     /// Renders the Publish tab UI.
     /// Allows users to send data to any key in the Zenoh network.
     fn show_publish_tab(&mut self, ui: &mut egui::Ui) {
-        // Show warning if not connected
-        if !matches!(self.connection_status, ConnectionStatus::Connected) {
-            ui.colored_label(
-                ExplorerColors::ERROR,
-                "⚠ Not connected. Please connect first.",
-            );
+        // Say why Publish is disabled, in neutral text
+        if let Some(notice) = connection_notice(&self.connection_status) {
+            ui.label(RichText::new(notice).color(self.text_secondary_color()));
+            self.help_link(ui, crate::ui::help::section::TROUBLESHOOTING);
             ui.separator();
         }
         ui.group(|ui| {
@@ -30,6 +81,17 @@ impl PublishUI for ZenohExplorer {
                 ui.label("Key:");
                 ui.text_edit_singleline(&mut self.publish_key);
             });
+            let key_err = crate::validation::key_expr_error(&self.publish_key);
+            if let Some(err) = &key_err {
+                ui.colored_label(ExplorerColors::ERROR, err);
+                self.help_link(ui, crate::ui::help::section::KEY_EXPRESSIONS);
+            } else if let Some(note) = crate::validation::wildcard_note(&self.publish_key) {
+                ui.label(
+                    RichText::new(note)
+                        .size(TEXT_SMALL_SIZE)
+                        .color(self.text_secondary_color()),
+                );
+            }
 
             // Payload section with file import
             ui.horizontal(|ui| {
@@ -205,16 +267,30 @@ impl PublishUI for ZenohExplorer {
                 ui.text_edit_singleline(&mut self.publish_encoding);
             });
 
-            // Publish button - only enabled when connected
-            let button = egui::Button::new("Publish");
-            if ui
-                .add_enabled(
-                    matches!(self.connection_status, ConnectionStatus::Connected)
-                        && !self.publish_key.is_empty(),
-                    button,
-                )
-                .clicked()
-            {
+            // Publish button - only enabled when connected. While a put is
+            // pending it stays enabled (no Tab-order trap) but a click does nothing.
+            let pending = matches!(self.publish_status, Some(PublishStatus::Sending { .. }));
+            let payload_is_empty = self
+                .publish_payload_bytes
+                .as_ref()
+                .map_or(self.publish_payload.is_empty(), |b| b.is_empty());
+            let button = egui::Button::new(publish_button_label(payload_is_empty, pending));
+            let connected = matches!(self.connection_status, ConnectionStatus::Connected);
+            let blocked = publish_blocked_reason(connected, key_err.is_some());
+            let clicked = ui
+                .horizontal(|ui| {
+                    let clicked = ui.add_enabled(blocked.is_none(), button).clicked();
+                    if let Some(reason) = blocked {
+                        ui.label(
+                            RichText::new(reason)
+                                .size(TEXT_SMALL_SIZE)
+                                .color(self.text_secondary_color()),
+                        );
+                    }
+                    clicked
+                })
+                .inner;
+            if clicked && !pending {
                 if let Some(sender) = &self.command_sender {
                     // Track if this is from file import before taking the bytes
                     let from_import = self.publish_payload_bytes.is_some();
@@ -238,19 +314,42 @@ impl PublishUI for ZenohExplorer {
                         from_import, // Don't store imported files after publish
                         filename: self.publish_payload_filename.clone(),
                     }) {
-                        Ok(_) => info!(
-                            "GUI: Publish command sent successfully for {} bytes",
-                            payload_len
-                        ),
-                        Err(e) => error!("GUI: Failed to send Publish command: {:?}", e),
+                        Ok(_) => {
+                            info!(
+                                "GUI: Publish command sent successfully for {} bytes",
+                                payload_len
+                            );
+                            // The worker's Published or OperationFailed ends this.
+                            self.publish_status = Some(PublishStatus::Sending {
+                                key: self.publish_key.clone(),
+                                bytes: payload_len,
+                            });
+                        }
+                        Err(e) => {
+                            error!("GUI: Failed to send Publish command: {:?}", e);
+                            self.publish_status = Some(PublishStatus::Failed(
+                                "the connection worker is not running".to_string(),
+                            ));
+                        }
                     }
 
-                    // Clear the UI state since we moved the bytes
-                    self.publish_payload_filename = None;
-                    self.publish_payload = String::new();
-                    self.publish_payload_expanded = false;
-                    self.import_memory_bytes = 0; // Memory freed after publish
+                    // Imported bytes were moved into the command; typed text stays for re-send.
+                    if from_import {
+                        self.publish_payload_filename = None;
+                        self.publish_payload = String::new();
+                        self.publish_payload_expanded = false;
+                        self.import_memory_bytes = 0;
+                    }
                 }
+            }
+
+            // What happened to the last publish
+            if let Some(status) = &self.publish_status {
+                ui.label(
+                    RichText::new(publish_status_line(status))
+                        .size(TEXT_SMALL_SIZE)
+                        .color(self.text_secondary_color()),
+                );
             }
         });
 
@@ -260,22 +359,61 @@ impl PublishUI for ZenohExplorer {
         ui.group(|ui| {
             ui.label(RichText::new("Queryable").strong());
             ui.label(
-                RichText::new("Respond to queries for locally published keys")
+                RichText::new(QUERYABLE_CAPTION)
                     .size(TEXT_SMALL_SIZE)
                     .color(self.text_secondary_color()),
             );
 
+            let connected = matches!(self.connection_status, ConnectionStatus::Connected);
+            // The Enable Queryable checkbox's own enable condition: only then
+            // can it be unticked (the pattern cannot change while enabled)
+            let checkbox_usable =
+                connected && crate::validation::key_expr_error(&self.queryable_pattern).is_none();
+
             ui.horizontal(|ui| {
                 ui.label("Key Pattern:");
-                ui.text_edit_singleline(&mut self.queryable_pattern);
+                // Locked while enabled: the declared queryable keeps its pattern.
+                ui.add_enabled(
+                    !self.queryable_enabled,
+                    egui::TextEdit::singleline(&mut self.queryable_pattern),
+                )
+                .on_disabled_hover_text(PATTERN_LOCKED);
+                if self.queryable_enabled && checkbox_usable {
+                    ui.label(
+                        RichText::new(PATTERN_LOCKED)
+                            .size(TEXT_SMALL_SIZE)
+                            .color(self.text_secondary_color()),
+                    );
+                }
             });
+            let pattern_err = crate::validation::key_expr_error(&self.queryable_pattern);
+            if let Some(err) = &pattern_err {
+                ui.colored_label(ExplorerColors::ERROR, err);
+            }
 
             ui.horizontal(|ui| {
                 let was_enabled = self.queryable_enabled;
-                ui.checkbox(&mut self.queryable_enabled, "Enable Queryable");
+                ui.add_enabled(
+                    pattern_err.is_none() && connected,
+                    egui::Checkbox::new(&mut self.queryable_enabled, "Enable Queryable"),
+                );
 
-                // Show status
-                if self.queryable_enabled {
+                // Show status: "Active" only while connected
+                if !connected {
+                    ui.label(
+                        RichText::new("Off: not connected")
+                            .color(self.text_tertiary_color())
+                            .size(TEXT_SMALL_SIZE),
+                    );
+                } else if let Some(reason) =
+                    queryable_blocked_reason(connected, pattern_err.is_some())
+                {
+                    ui.label(
+                        RichText::new(reason)
+                            .color(self.text_secondary_color())
+                            .size(TEXT_SMALL_SIZE),
+                    );
+                } else if self.queryable_enabled {
                     ui.label(
                         RichText::new("Active")
                             .color(if self.dark_mode {
@@ -306,15 +444,135 @@ impl PublishUI for ZenohExplorer {
                     }
                 }
             });
-
-            ui.label(
-                RichText::new(
-                    "When enabled, this app will respond to queries for keys you've published",
-                )
-                .size(TEXT_SMALL_SIZE)
-                .color(self.text_tertiary_color())
-                .italics(),
-            );
         });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn publish_status_line_words() {
+        let s = PublishStatus::Sending {
+            key: "demo/test".into(),
+            bytes: 12,
+        };
+        assert_eq!(publish_status_line(&s), "Publishing 12 bytes to demo/test…");
+        let s = PublishStatus::Failed("demo//x: invalid key".into());
+        assert_eq!(
+            publish_status_line(&s),
+            "Not published: demo//x: invalid key"
+        );
+        let s = PublishStatus::Published {
+            key: "k".into(),
+            bytes: 3,
+            at: chrono::Utc::now(),
+        };
+        assert!(publish_status_line(&s).starts_with("Published 3 bytes to k · "));
+    }
+
+    #[test]
+    fn publish_button_label_rules() {
+        assert_eq!(publish_button_label(false, false), "Publish");
+        assert_eq!(publish_button_label(true, false), "Publish empty payload");
+        assert_eq!(publish_button_label(false, true), "Publishing…");
+    }
+
+    use crate::app::headless::{node, nodes, text, Headless, WIDE};
+    use crate::app::theme::MIN_TARGET;
+
+    fn publish_panel(a: &mut ZenohExplorer, ui: &mut egui::Ui) {
+        a.show_publish_tab(ui)
+    }
+
+    #[test]
+    fn publish_blocked_reason_rules() {
+        assert_eq!(publish_blocked_reason(false, false), Some("Connect first"));
+        assert_eq!(publish_blocked_reason(false, true), Some("Connect first"));
+        assert_eq!(
+            publish_blocked_reason(true, true),
+            Some("Fix the key above")
+        );
+        assert_eq!(publish_blocked_reason(true, false), None);
+        assert_eq!(
+            queryable_blocked_reason(true, true),
+            Some("Fix the pattern above")
+        );
+        assert_eq!(
+            queryable_blocked_reason(false, true),
+            None,
+            "Off: not connected says it"
+        );
+        assert_eq!(queryable_blocked_reason(true, false), None);
+    }
+
+    #[test]
+    fn publish_reasons_are_visible() {
+        let (mut app, _tx) = ZenohExplorer::test_app();
+        let h = Headless::new(WIDE);
+        let out = h.panel(&mut app, vec![], publish_panel);
+        let publish = node(&out, "Publish").expect("Publish button");
+        let reason = text(&out, "Connect first").expect("reason beside Publish");
+        assert!(
+            reason.rect.left() >= publish.rect.right(),
+            "right of the button"
+        );
+        assert!((reason.rect.center().y - publish.rect.center().y).abs() < MIN_TARGET / 2.0);
+        for name in ["Publish", "Import File", "Enable Queryable"] {
+            let n = node(&out, name).unwrap_or_else(|| panic!("{name}"));
+            assert!(n.rect.height() >= MIN_TARGET, "{name} {:?}", n.rect);
+        }
+        assert!(
+            node(&out, "More in Help").is_some(),
+            "the notice links Troubleshooting"
+        );
+        app.connection_status = ConnectionStatus::Connected;
+        app.publish_key = "demo//x".into();
+        app.queryable_pattern = "a//b".into();
+        let out = h.panel(&mut app, vec![], publish_panel);
+        assert!(text(&out, "Fix the key above").is_some());
+        assert!(text(&out, "Fix the pattern above").is_some());
+        assert_eq!(
+            nodes(&out)
+                .iter()
+                .filter(|n| n.name == "More in Help")
+                .count(),
+            1,
+            "the key error links Key expressions"
+        );
+        app.publish_key = "demo/x".into();
+        app.queryable_pattern = "**".into();
+        app.queryable_enabled = true;
+        let out = h.panel(&mut app, vec![], publish_panel);
+        assert!(
+            text(&out, PATTERN_LOCKED).is_some(),
+            "the lock reason is painted"
+        );
+    }
+
+    #[test]
+    fn pattern_lock_hint_only_when_the_checkbox_is_usable() {
+        let (mut app, _tx) = ZenohExplorer::test_app();
+        let h = Headless::new(WIDE);
+        app.queryable_pattern = "**".into();
+        app.queryable_enabled = true;
+        for status in [
+            ConnectionStatus::Disconnected,
+            ConnectionStatus::Error("lost".into()),
+        ] {
+            app.connection_status = status;
+            let out = h.panel(&mut app, vec![], publish_panel);
+            assert!(
+                text(&out, PATTERN_LOCKED).is_none(),
+                "Enable Queryable is disabled while not connected, so untick is impossible"
+            );
+        }
+        app.connection_status = ConnectionStatus::Connected;
+        let out = h.panel(&mut app, vec![], publish_panel);
+        assert!(
+            text(&out, PATTERN_LOCKED).is_some(),
+            "connected: it can be unticked"
+        );
     }
 }
