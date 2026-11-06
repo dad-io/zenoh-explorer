@@ -77,6 +77,14 @@ A GUI application for exploring, debugging, and monitoring Zenoh networks.
 
 ## Contributing
 
+Windows and Linux CI launches the native executable and checks a screenshot of its
+rendered framebuffer for visible content. The `gui-smoke-<target>` Actions artifacts
+contain the PNG, application log, and a report with the executable's SHA-256. Linux
+uses Xvfb and Mesa; Windows uses Mesa beside an identical copy of the executable.
+Release publication requires these checks to pass. This checks startup and basic
+rendering with software graphics; it does not exercise every interaction or GPU
+driver. `EFRAME_SCREENSHOT_TO` is reserved for this capture-and-exit mode.
+
 This is a standalone Zenoh network explorer designed to be a generic debugging and monitoring tool. Contributions are welcome for:
 
 - Anything

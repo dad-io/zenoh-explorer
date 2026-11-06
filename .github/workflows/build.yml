@@ -67,3 +67,17 @@ jobs:
         env:
           TARGET: ${{ matrix.target }}
         run: cargo build --release --locked --target "$TARGET"
+
+      - name: Build GUI executable (pull requests)
+        if: github.event_name == 'pull_request' && runner.os != 'macOS'
+        env:
+          TARGET: ${{ matrix.target }}
+        run: cargo build --locked --target "$TARGET"
+
+      - name: Verify native window renders
+        if: runner.os != 'macOS'
+        timeout-minutes: 10
+        uses: ./.github/actions/gui-smoke
+        with:
+          target: ${{ matrix.target }}
+          executable: target/${{ matrix.target }}/${{ github.event_name == 'push' && 'release' || 'debug' }}/zenoh-explorer${{ runner.os == 'Windows' && '.exe' || '' }}
