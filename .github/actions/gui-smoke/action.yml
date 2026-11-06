@@ -27,7 +27,7 @@ runs:
       shell: bash
       run: |
         sudo apt-get update
-        sudo apt-get install -y --no-install-recommends xvfb xauth libgl1-mesa-dri libegl1
+        sudo apt-get install -y --no-install-recommends xvfb xauth libgl1-mesa-dri libegl1 libxkbcommon-x11-0
 
     - name: Prepare Windows software OpenGL
       if: runner.os == 'Windows'
