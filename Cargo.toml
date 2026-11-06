@@ -1,6 +1,6 @@
 [package]
 name = "zenoh-explorer"
-version = "1.0.0"
+version = "1.0.1"
 edition = "2021"
 rust-version = "1.88"
 description = "A native GUI application for exploring Zenoh networks"
